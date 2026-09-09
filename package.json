@@ -1,0 +1,17 @@
+{
+  "name": "embedded_linux_lecture_notes",
+  "version": "1.0.0",
+  "description": "Comprehensive HTML Web Documentation Portal & Teaching Reference for Embedded Systems Engineering",
+  "type": "module",
+  "scripts": {
+    "docs:dev": "vitepress dev docs --port 5173",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "pdf": "make pdf"
+  },
+  "devDependencies": {
+    "mermaid": "^10.9.1",
+    "vitepress": "^1.6.3",
+    "vitepress-plugin-mermaid": "^2.0.17"
+  }
+}

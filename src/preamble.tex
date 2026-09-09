@@ -1,0 +1,157 @@
+% --- Core Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable,listings}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{titlesec}
+\usepackage{microtype}
+\usepackage{caption}
+\usepackage{amsmath,amssymb}
+\usepackage{hyperref}
+
+% --- Custom Color Palette ---
+\definecolor{NavyBlue}{HTML}{1E3A8A}
+\definecolor{SlateTeal}{HTML}{0D9488}
+\definecolor{AmberOrange}{HTML}{D97706}
+\definecolor{DarkCharcoal}{HTML}{1F2937}
+\definecolor{CodeBg}{HTML}{F8FAFC}
+\definecolor{BoxBgBlue}{HTML}{EFF6FF}
+\definecolor{BoxBgGreen}{HTML}{F0FDF4}
+\definecolor{BoxBgYellow}{HTML}{FFFBEB}
+\definecolor{BoxBgPurple}{HTML}{F5F3FF}
+\definecolor{BorderBlue}{HTML}{3B82F6}
+\definecolor{BorderGreen}{HTML}{10B981}
+\definecolor{BorderYellow}{HTML}{F59E0B}
+\definecolor{BorderPurple}{HTML}{8B5CF6}
+
+% --- Hyperlink Setup ---
+\hypersetup{
+    colorlinks=true,
+    linkcolor=NavyBlue,
+    citecolor=SlateTeal,
+    urlcolor=NavyBlue,
+    pdftitle={Embedded Linux Fundamentals \& Custom System Build Guide},
+    pdfauthor={Comprehensive Lecture Notes}
+}
+
+% --- Header and Footer Formatting ---
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\textcolor{NavyBlue}{\textbf{Embedded Linux Fundamentals}}}
+\lhead{\textcolor{DarkCharcoal}{\small Lecture \& Hands-On Guide}}
+\rfoot{\small Page \thepage\ of \pageref{LastPage}}
+\lfoot{\small Embedded Systems Engineering}
+\renewcommand{\headrulewidth}{0.6pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% --- Section Title Styling ---
+\titleformat{\section}
+  {\color{NavyBlue}\normalfont\Large\bfseries}{\thesection}{1em}{}[{\titlerule[1pt]}]
+\titleformat{\subsection}
+  {\color{SlateTeal}\normalfont\large\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\color{DarkCharcoal}\normalfont\bfseries}{\thesubsubsection}{1em}{}
+
+% --- Custom TColorBoxes ---
+\newtcolorbox{conceptbox}[1]{
+  colback=BoxBgBlue,
+  colframe=BorderBlue,
+  fonttitle=\bfseries\color{white},
+  coltitle=white,
+  title={#1},
+  enhanced,
+  attach boxed title to top left={yshift=-2mm,xshift=3mm},
+  boxed title style={colback=NavyBlue,arc=3mm},
+  arc=2mm,
+  boxrule=1pt,
+  breakable
+}
+
+\newtcolorbox{warningbox}[1]{
+  colback=BoxBgYellow,
+  colframe=BorderYellow,
+  fonttitle=\bfseries\color{white},
+  coltitle=white,
+  title={#1},
+  enhanced,
+  attach boxed title to top left={yshift=-2mm,xshift=3mm},
+  boxed title style={colback=AmberOrange,arc=3mm},
+  arc=2mm,
+  boxrule=1pt,
+  breakable
+}
+
+\newtcolorbox{tipbox}[1]{
+  colback=BoxBgGreen,
+  colframe=BorderGreen,
+  fonttitle=\bfseries\color{white},
+  coltitle=white,
+  title={#1},
+  enhanced,
+  attach boxed title to top left={yshift=-2mm,xshift=3mm},
+  boxed title style={colback=SlateTeal,arc=3mm},
+  arc=2mm,
+  boxrule=1pt,
+  breakable
+}
+
+\newtcolorbox{cmdbox}[1]{
+  colback=CodeBg,
+  colframe=DarkCharcoal,
+  fonttitle=\bfseries\color{white},
+  coltitle=white,
+  title={#1},
+  enhanced,
+  attach boxed title to top left={yshift=-2mm,xshift=3mm},
+  boxed title style={colback=DarkCharcoal,arc=2mm},
+  arc=2mm,
+  boxrule=1pt,
+  breakable
+}
+
+\newtcolorbox{takeawaybox}[1]{
+  colback=BoxBgPurple,
+  colframe=BorderPurple,
+  fonttitle=\bfseries\color{white},
+  coltitle=white,
+  title={#1},
+  enhanced,
+  attach boxed title to top left={yshift=-2mm,xshift=3mm},
+  boxed title style={colback=BorderPurple,arc=3mm},
+  arc=2mm,
+  boxrule=1pt,
+  breakable
+}
+
+% --- Code Listing Styling ---
+\lstset{
+  backgroundcolor=\color{CodeBg},
+  basicstyle=\ttfamily\small\color{DarkCharcoal},
+  breakatwhitespace=false,
+  breaklines=true,
+  captionpos=b,
+  commentstyle=\color{SlateTeal},
+  escapeinside={\%*}{*)},
+  keywordstyle=\color{NavyBlue}\bfseries,
+  stringstyle=\color{AmberOrange},
+  frame=none,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  stepnumber=1,
+  numbersep=8pt,
+  showspaces=false,
+  showstringspaces=false,
+  showtabs=false,
+  tabsize=2
+}

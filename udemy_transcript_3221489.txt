@@ -1,0 +1,3781 @@
+
+
+=== Introduction ===
+
+
+--- Elements of Embedded Linux ---
+
+Good morning, guys.
+Today we are going to start a series on Yocto.
+We will learn yocto and then we are going to use Yocto to create our own embedded Linux images.
+So let's get started.
+So what are the four elements of embedded Linux?
+The four elements of embedded Linux are toolchain bootloader kernel and a root file system.
+So toolchain is a compiler and other tools like assembler linker and loader, which is needed to create
+code for your target device.
+So everything else, the bootloader kernel and root file system, it depends on the toolchain.
+Then we have bootloader.
+This is the code program which initializes the board and loads the Linux kernel.
+Then comes kernel, which is the heart of the system.
+It manages system resources and interface perform interfacing with the hardware.
+Finally, we have the root file system.
+This contains the libraries and programs which run once the kernel has completed its initialization.
+So these are the four elements of any embedded Linux project the toolchain, the bootloader, the kernel
+and the root file system.
+One more element which we can add is collection of programs or applications specific to your embedded
+application or specific to your project, which will make the device to do what it is supposed to do.
+So embedded Linux application can be like weighing groceries, it can be displaying movies, it can
+be a digital signage, it can be a media player, it can be controlling a robot or flying a drone.
+So this is the final element.
+So this all elements are.
+Of this, all elements are combined.
+We can call as an embedded Linux image.
+So if we want to generate an.
+If we want an embedded Linux image, it should have a toolchain, it should have a bootloader, it should
+have a kernel, it should have a root file system, and then it should have an application which actually
+perform the real, real task like flying a drone or media player.
+
+--- What is Yocto ---
+
+So what is Yocto?
+Non-technically speaking.
+Yocto is a smallest symmetric system prefix.
+We know em.
+We know em means it is Milli, which is ten power minus three.
+Which is so yocto.
+Here is this y.
+Y is ten power -24.
+So Non-technically speaking Yocto is nothing but the smallest asymmetric system prefix, which is ten
+power -24.
+So let's come to the technical thing.
+So, Yoko, what is Yocto project?
+Yocto project.
+It provides open source, high quality infrastructure and tools to help developers create their own
+custom Linux distributions for any hardware architecture.
+So what he is saying is it provides open source and tools.
+It provides open source tools which the developer can use to create their own custom Linux distribution.
+So using Yocto project developers can create their own custom Linux distribution like Ubuntu, you can
+create your own Ubuntu for your hardware, you can create your own fedora or you can create your own
+open source for your particular hardware.
+History of Yocto project is it was founded in 2010 in an effort to reduce work duplication, provide
+resources and information catering to both new and experienced users.
+And this was this collaboration of many hardware manufacturers, like in many hardware manufacturers,
+open source operating system vendors and electronic companies.
+So all of them, they collaborated and they made this Yocto project.
+And Yocto is also a project working group of the Linux Foundation.
+
+
+=== Yocto Terminology ===
+
+
+--- Input and Output of Yocto Project ---
+
+So to understand the outcome provided by Yocto project, you can take the analogy of a computing machine.
+What we view as input to a computing machine.
+You give a set of data that describes what we want.
+So a specification.
+So this can be the data can be a kernel configuration.
+What kernel want, which kernel version I want, what hardware I have, what all packages need to be
+installed on the on the on the image.
+What all binaries needs to be present on the image.
+This as an input to the Yocto project.
+This is a set of data which we are telling.
+We need this particular kernel version and in this kernel version we need this kernel configuration.
+We have this kernel configuration and we have this particular packages.
+We need these packages.
+And finally, the output which Yocto project gives is a Linux based embedded project or a product.
+So it gives a Linux based embedded product, which is nothing but Linux kernel boot file system bootloader
+device tree.
+It also gives you the toolchain.
+So this is an input input is kernel configuration name of the hardware and a lot of information you
+have to give as input like which packages you want and all.
+And finally you get an output which is kernel image, root file system bootloader device, tree and
+toolchain.
+
+
+=== Exploring Poky Directories and Files ===
+
+
+--- Setting up build machine ---
+
+So you to use Yocto.
+There are some prerequisites.
+You have to have 50GB of free disk disk space and it should run on a supported Linux distribution.
+So it should run on like the supported Linux distributions are fedora opensource, CentOS, Debian,
+ubuntu.
+And then there are some these three packages which system should already be installed like.
+Get should have this version.
+Tar and Python.
+And then you have to install packages, which package you have to install.
+It depends on the development system.
+I'm using ubuntu 18.04, so.
+I have to install this all packages for my build system to configure to use my machine for your.
+So I have already installed this packages.
+So have already installed this.
+So you need to install all these packages and this is mentioned in this particular link.
+If you go to this link, you can see this.
+All packages are being mentioned in this link.
+
+
+=== Yocto on BeagleBone ===
+
+
+--- What is poky ---
+
+Now, let's come in in detail in October.
+We have something spooky.
+What is spooky?
+Spooky is a reference distribution of Yocto project.
+The word reference here means is example.
+So it's an example distribution.
+So you are going to create your own distribution, right?
+You need an example to take.
+You need an example to look how to create my own distribution.
+So Yocto project provides an example distribution or distro which is spooky.
+So yocto project it uses spooky.
+To build images.
+The images are like kernel image system, image system and application software for your particular
+target hardware.
+So the technical level, it is a combined repository of the components like Bitbake, Openembedded core
+Yocto BSP documentation.
+So it's a combination of these all repositories.
+We'll be looking into each and every term.
+Important point here is Pocky does not contain any binary files.
+It is a working example of how to build your own custom Linux distribution from source.
+What is the difference between Pokey and Yocto?
+So we we have we didn't know.
+We were discussing about Yocto and now we came to Pokey.
+So what is the difference?
+The exact difference between Yocto and Pokey Yocto?
+It refers to the organization like one.
+Take an example for Ubuntu.
+The company behind ubuntu is canonical and pokey refers to the actual bits downloaded.
+It's like ubuntu.
+So company is yocto and the actual source is pokey.
+So the important point here is pokey is an example working example of how to build your own custom Linux
+distribution from source.
+So you can take pokey and then you can modify it and then you can create your own Linux distribution.
+So Pokey is a combined repository of this particular project's components.
+Bitbake.
+Openembedded Core meta Yocto.
+BSD and document.
+
+
+=== Yocto Project Releases ===
+
+
+--- What is metadata ---
+
+So let's get more deeper into the terminology.
+So we need to know this terminology so we can easily understand our future lectures.
+So what is metadata?
+So none of the old metadata is a set of data that describes and gives information about other data coming
+to your world.
+Metadata refers to the build instructions.
+It refers to the commands and data which are used to indicate what versions of software are used, where
+they are obtained from what all patches, which I need to apply.
+So metadata is nothing but the build instructions.
+For example, take what should be the metadata for the kernel.
+What should be the metadata for kernel?
+It should be how to build this kernel, how to use make command.
+I have to use make menuconfig.
+I have to use make install make modules install.
+So these are the commands and where I can get this kernel image or kernel source code.
+I have to mention the website or the git repository where this particular kernel image is present.
+And if I have any patches related to my hardware, I have to mention this.
+Which version of kernel I have to use.
+I have to mention this.
+So this is all known as metadata.
+So I have given an example of kernel image and this applies to all the packages.
+Like it can apply to the git package, it can apply to USB utils package.
+There are many packages, so all for each and every particular package or for each and every thing which
+is used in the Linux image, you need to specify the metadata.
+So metadata in Yocto it is a collection of configuration files, it has an extension dot conf recipes,
+dot and dot append, which has extension of dot and append classes which has an extension of class includes,
+which has an extension of NC.
+So we'll be looking.
+We have to understand all these files.
+To better understand your code, you have to understand what kind of configuration files we have and
+how is the recipe written, what are the different classes and what are the includes.
+So if you understand all of these, then you will be easily understanding how to write your own.
+Custom Linux distribution.
+You can easily write your own custom Linux distribution and you can easily debug while you are having
+any issues.
+When you're building the image.
+
+
+=== meta-ti BSP Layer ===
+
+
+--- What is oe-core ---
+
+So we said Pokey.
+It is a combination of so many projects.
+One is a bit big.
+Then we said it is a combination of bitbake, open embedded core, meta yocto, BSP and documentation.
+So then we have Openembedded project.
+So what is this Openembedded project from their website?
+Openembedded project.
+It offers a best in class Cross-compile environment.
+It allows developers to create a complete Linux distribution for embedded systems.
+So you can see both are doing the same thing.
+Yocto project allows also to create custom Linux distribution and Openembedded project.
+It also allows developers to create a complete Linux distribution for embedded systems.
+So what is the difference between Openembedded project and the Yocto project?
+So the Yocto project and Openembedded project, they share a core collection of metadata.
+So we have just now understood what metadata is the share, a core collection of metadata which we call
+as openembedded core.
+But however, the two organizations, they remain separate, each with its own focus.
+The focus of Openembedded is to provide a comprehensive set of metadata.
+This is the focus of this particular project.
+Openembedded project.
+It provides a comprehensive set of metadata for a wide variety of architectures, features and applications.
+An Openembedded is not designed for a, it does not have a reference distribution and it is designed
+to be the foundation for others.
+Whereas Yocto project, the focus of Yocto project is to provide a powerful, easy to use interoperable,
+well-tested tools.
+It also provides metadata.
+It also provides board support packages for a core set of architectures and specific boards.
+So each of these project has their own particular focus.
+The main focus of Openembedded is to be foundation for others.
+It provides you a set of metadata.
+The main focus of Yocto is providing you a powerful, easy to use interoperable, well tested tools
+and metadata, as well as board support packages.
+First so you can create your own custom distribution.
+But the important point here is both of them the share a core collection of metadata, which we call
+as openembedded core.
+So we said Pocky is a combination of Bitbake, Openembedded core documentation and yocto BSP.
+So this is what Openembedded core.
+Both these projects, they share this particular metadata metadata, we know it is giving instructions
+which version to use, which patches to apply and all we have to fetch the code.
+So Openembedded core core, the Yocto project and Openembedded project.
+They have agreed to work together and share a common set of metadata.
+You know what is metadata is classes, configuration, etcetera, which is core.
+So if you look into if you look into both the project's source code, you'll be fine.
+Finding core is same in both the projects.
+The source is same, the metadata is same in both the projects.
+So this is the important point.
+The Yocto project and Openembedded, they share a Common Core set of metadata which is called as Core.
+
+
+=== Yocto on Raspberry Pi3 ===
+
+
+--- What is bitbake ---
+
+Then we have bitbake.
+So we have learned one of the component of Poke, which is core.
+Now the next component is bitbake.
+So Bitbake is a core component of Yocto project or poke.
+It basically performs the same functionality of make.
+So it is a task scheduler which passes Python and Shell script mixed code.
+So Bitbake is a task scheduler which actually parses.
+In this particular code.
+And then once once once this code is passed, it generates and runs the task, which are basically a
+set of steps.
+Ordered according to the court's dependencies.
+So the dependencies are.
+First, we need to fetch the source, then we need to extract the source.
+Then we need to configure the source so it generates a set of steps, ordered steps like fetching,
+downloading, fetching or downloading, extracting, configuring, applying patches.
+So it actually generates this such kind of tasks and then it runs those tasks.
+So it is a task scheduler.
+So how it does, it actually reads the Python and shell script, mixed code.
+Mixed code.
+It keeps track of all the tasks being processed in order to ensure completion so it makes sure they
+are completed.
+So if suppose you have cancelled in between and next time you run the bitbake, it will make sure this
+is run again.
+It maximizes the use of processing resources, so it uses all of your processor codes.
+To reduce the build time and being predictable.
+So this is a task scheduler.
+So like you have make on your line when you use make.
+You use make right and you build Linux kernel for Yocto we use bitbake.
+For Bill to view.
+If someone is already aware of bill route we use make but we don't use make here.
+We use break.
+
+--- What is meta-yocto-bsp ---
+
+Then we have one more component, which is meta yocto BSP.
+What is BSP?
+A BSP board support package is a collection of information that defines how to support a particular
+hardware device or set of devices or a particular hardware platform.
+The information which is present on the BSP includes.
+The hardware features the kernel configuration along with any hardware drivers which are required.
+The BSP also can list any additional software components required in addition to the generic Linux software
+stack.
+So it includes kernel configuration, it includes device free, it includes hardware specific drivers
+as well as it also includes software components like it can be USB utils, it can be any other components
+like Xorg just because it has a display.
+Suppose your board has a display and a display stack like or I can use x or x server.
+So the BSP which is present, which is meta BSP, which is present in Pokey, it maintains.
+It has vsps for beaglebone edge router and a generic version of 32 bit and 64 bit Intel architecture
+machines.
+So these are the machines which are already being supported by Pocky.
+So Pocky has support for this particular machines.
+First one is a Beaglebone.
+Here is Beaglebone and it has support for Freescale.
+This particular IC, it has for edge router.
+It has four Intel, x86 based PCs and devices.
+If you are developing.
+Or if you are working for Yocto on a different hardware, you need to have a BSP for your particular
+hardware.
+So poky is not having the BSP.
+You have to include that particular hardware specific yocto layers which will be looking like we'll
+be looking into how to generate an image for Raspberry Pi.
+Raspberry Pi is not supported by poky because poky only has board support package for Beaglebone Freescale
+and this particular device does not have BSP for Raspberry Pi.
+So how to add a BSP?
+You need to add BSP of yocto or we can add it.
+We'll be looking into our upcoming sessions.
+
+--- Other Poky Repositories ---
+
+Then we have others other projects like Meta Pocky, which is Pocky specific metadata.
+This is one more project.
+Then we have documentations.
+Documentation contains the Yocto project source files used to make the user manual so it contains source
+files which is used to make a yocto user manual.
+So in conclusion, you can say Pocky is nothing, but it includes Openembedded project component, which
+is core.
+It has bitbake and it has meta yocto BSP, which is nothing but bsps for some set of machines.
+It has helper scripts to set up the environment, it has documentation, it has some specific metadata.
+It has a emulator qemu test image.
+So this is all which is present in the Pocky.
+So pocky, when you say pocky, it means it is a you have present, you have bitbake, you have bsps
+for some machines, you have documentation and you have some scripts.
+So you can see here this picture clearly displays what we mean.
+This is an open embedded project.
+And this is Pokey Project.
+So Pokey and Openembedded, they share the Bitbake as well as Openembedded code core.
+This is being shared by both Pokey and Openembedded project.
+And Bogie has Mikka pokey.
+And the meta pokey is pokey specific metadata.
+And we have meta octo BSP.
+Then we have documentation which contains the source files to generate the manuals.
+And these are different, which we'll be looking like we'll be looking in our upcoming sessions each
+Yocto project compatible layers or other development tools which we have and the Bsp's compatible.
+Bsp's.
+
+--- Hello World of Poky ---
+
+So workflow of Yocto project.
+So let's do a Hello World of Yocto project.
+The first step is download the source code so we know we have a source files.
+This is not a binary file, so the first step is download the source code.
+So let's download the source code.
+So I'm going to create a source folder which will be using.
+In our upcoming sessions, I'm creating a source folder and here I will be cloning the key.
+I'm going to fetch the key from this particular site.
+So I have downloaded the source code of Pokey.
+So let's go into the pokey and find out what is present.
+So you have Bitbake, which is a task scheduler of hockey.
+You have meta hockey, spooky specific metadata.
+Then you have documentation which contains the source files to generate the user manual.
+Then you have meta yocto bsp.
+You have it is a BSP of supported by pokey like for beaglebone black for.
+Generic x86 machines and you have scripts.
+Then you have this meta.
+So this is the meta is nothing but the open embedded code.
+So meta is the open embedded code code.
+When you say code.
+And we say that open embedded project in Yocto project, they share a common set of metadata.
+This is this meta.
+So now you understood What is spooky?
+It is a source.
+Files is not binary files.
+Okay.
+It's nothing, but a metadata contains metadata.
+It is.
+It is a combination of many repositories, many projects like Bitbake Meta, which is core documentation,
+scripts, meta, DSP, we call them in combination, we call them as.
+So we have downloaded the pokey.
+Now, let's check out the latest release.
+So this is the latest release.
+So let's check out this.
+Okay, check out this.
+So now we are.
+Check out the latest from master we have moved to use.
+So this is the latest release of your code.
+Now you have to.
+The next step is you have to prepare the build environment so it provides you a script which is init
+openembedded init build environment which you can use to set up or initialize the build environment.
+So when you use in run the script it will set up your environment so you can use the Yocto build system
+to also add the Bitbake utility to the path.
+So let's see what it does.
+So it is present.
+This script is already present here in IT built environment.
+So before actually starting building your images, you have to prepare your build environment.
+You can do this by running this particular script.
+So now I don't have bitbake and say Bitbake it will not work because it is not present in my path.
+The environment variable is not having it.
+So now let's source it.
+So let me source.
+Also we need built environment and have to specify the build folder.
+If next argument is a build which you which directory you want to have a build.
+If do not give a this argument.
+This is an optional argument, but do not specify this argument.
+It will create a build folder in this particular.
+Wherever I am, whatever location I am, to create a build folder.
+But I do not want a build folder here.
+I want it separate so I will create a build folder.
+Yeah.
+And I would say need a build folder here.
+So I have, I'm sourcing the build environment.
+So now you can see it saying you can now do a shell environment setup for builds.
+And it is also mentioning the website of openembedded and Yocto project.
+It is giving what all images it is supported minimal image, graphical image.
+You can build a toolchain etcetera.
+So now.
+Now let's see the environment variable.
+So it has added.
+You can see here the starting.
+The entry of path.
+You can see this.
+Scripts folder is added into the path environment variable.
+Now I can use Bitbake.
+So now Bit Back is available because when you have set up your built environment, it's available.
+So now we have prepared our build environment.
+So this script will move you in build folder.
+So previously we were in Pokey folder, but now you are in build folder and it also creates you.
+A coin folder, so it creates a coin folder with two specific files which are important.
+DB layers, conf and local conf.
+So it creates you two files, three files actually, but important files are local, conf and db laist.com.
+And finally, if you want to generate a Linux distribution, the command for generating a Linux distribution
+is bitbake.
+Image name.
+So whatever image you want to generate, whether you want to generate a minimal image, we'll be using
+the images which are already.
+We're present in Pokey.
+In our upcoming sessions, we'll be creating our own images.
+So which image you want to generate?
+Minimal image or image, which has only a command line image which you have.
+A UI, x server, etc..
+Core image minimal.
+This is a small image which allows a device to boot and it is very useful.
+This kind of image is very useful when you are performing kernel and bootloader test.
+So whenever you are doing a development on kernel and bootloader core image, minimal is very useful.
+If you are doing some application development which has UI and all, you have a different image.
+So we'll first generate a core image.
+Minimal.
+So command is a bit big.
+Core image.
+Minimum.
+So the Bitbake is a task scheduler.
+It will pass all the metadata which is present and it will generate a set of ordered tasks and it will
+start executing this ordered task.
+So what it is doing currently is it's passing all the metadata which is present in the book, whatever
+metadata which is present in the pokey, and it is generating a set of ordered tasks which it will execute.
+Now the question is for what?
+Image, for what hardware.
+This is generating the image.
+So by default, when you source the environment script to generate image for qemu x86 64, you can see
+here it is generating an image kernel image for qemu x86 64.
+So it has printed some information like we are using Ubuntu 18.04 and the target system.
+Is this the distribution?
+We are using a distribution.
+We are not still not creating our own distribution.
+We are using the Cauchy distribution.
+So now you can see it is executing its task.
+It has started executing task.
+So you can see it has generated that it has to come.
+This many tasks are present and it is executing each of the tasks one by one.
+So you can see every package like exit.
+It is fetching those, dispatching, it is configuring this and unpacking or extracting then this building
+them so you can observe this.
+
+--- Run Generated Image in QEMU ---
+
+So that particular build will take a lot of time.
+So what I did is it takes more than two hours depending on your configuration.
+If you are running on a VM, which has very less Ram and number of cores are very less.
+I have like six cores and I have.
+Eight GB of Ram already allocated for this particular VM.
+So this actually took me have performed a build previously.
+It took me like it took me more than two hours to perform this build.
+So what I did is I kept that build to have copied that build here.
+So do not waste my time and your time seeing that build.
+So it takes two hours so you can start the build and you can do your own task.
+So have that bill already present here?
+So now we have the build ready.
+How can I use kimono?
+I want to run this image kimono with this quick emulator.
+This is a free and open source software package that performs hardware.
+Virtualization.
+And with chemo you can test and develop without hardware.
+What all hardware or emulations are supported?
+Is supported.
+Mips, PowerPC, x86 Intel are supported.
+So Pokey it provides you a script runtime which allows you to start the chemo using yocto generated
+images.
+So now you have generated an image using embedded Linux or Yocto project.
+Now you want to start that particular image or you want to use those kernel images, the root file system
+and all.
+So Yocto provides you a script.
+The name of the script is Run Chemo, so it is present in the scripts folder.
+So you go to school sources.
+Okay.
+Scripts.
+This script known as run chemo.
+So this is a script which we'll be using.
+So let's run this script, run chemo.
+So because it's already added in the path, you can easily see.
+Run chemo, come in and there are different ways to use run chemo.
+So the syntax is.
+We can run the script with any valid configuration.
+So if we have this particular argument's already set kernel bias root device tree, let's see whether
+we have this argument set.
+Machine machine.
+Don't have this set.
+So there are different options for this.
+It gives an example.
+If I say run chemo, it automatically picks up the configuration.
+And is there any more chemo arm?
+So if I have multiple images, like if I have an image for chemo x86, if I have an image for chemo
+arm, then I have to manually specify it.
+I have to also specify I can also specify this thing.
+So for now, let's actually run the image.
+So run the image, Run the image.
+Say run chemo.
+The machine is chemo x86 64.
+And the image which we have generated is core image Minimal.
+So now you can see here it has.
+Use the kernel image which has been generated.
+It has used the route.
+And we do not have the history for this for x86 and it has started a.
+Chemo session.
+You can see it is a chemo.
+UI.
+So we are now into chemo.
+And I can find out the root of size.
+It is.
+Of Rootfs is only being used.
+You can see ten, you can see the configuration which CPU it is.
+It is having a single core.
+It is core two duo core CPU.
+And it has like 259 one megahertz CPU frequency.
+It's a 64 bit.
+I can also find out the kernel version.
+The kernel version we are using is 5.2. 28.
+And you can see this 64 bit.
+I can find out anything.
+So this is what if config is there?
+The IP is assigned.
+Not all.
+So you can try all the applications which you normally use.
+Is there echo?
+Is there?
+Echo is there.
+Others are being present.
+Now you have a basic bare minimum image.
+Console, command line, base image and the rootfs is very minimal.
+Size ten MB of size, which is now you have generated an image which is running on Qemu emulator so
+you can power it off.
+
+--- Build and Run QEMU Arm ---
+
+So we have seen the hello world of Yolo.
+We have generated an image, generated an image.
+Embedded Linux image, which actually is kernel image and rootfs and we have tested this on a chemo
+emulator.
+So what is the next step now?
+No, I want to generate an image.
+I have a chemo.
+Chemo supports ARM.
+What modifications I have to do if I want to generate an image image which can run on chemo.
+So there is one line of modification and you can have an image generated for chemo.
+This is a file known as local conf, local configuration, and you do a build, set up, a build or
+source.
+The build environment script.
+You'll be having a local dot conf file.
+It creates a conf folder in which there is a local dot conf file.
+So by default the default data source it has generated for chemo x86 64.
+So it has generated an image for chemo x86 64.
+But now I need an image for I need an image for chemo.
+So I can modify.
+This particular thing.
+Anymore.
+So the machine is actually telling the pokey, so which machine I have to generate my image.
+So it is saying the default machine is x86 64.
+If I do not generate a machine.
+So if I want for different I can modify this.
+So if I need for edge router I can set machine equals to edge router.
+If I need for my image a mirrored linux image for beaglebone I can set the machine.
+Beaglebone.
+Yocto.
+But for now I need for chemo arm.
+So I'm setting it for chemo arm.
+So.
+Now, I have already generated this image, so this is needed if you have changing the terminal.
+So if you have switched to some other terminal, then you have to again run this.
+Then you have to specify.
+You have to build the image by saying bit bytecode image minimal because the previous image which was
+generated, the kernel was compiled for x86.
+The whole packages were compiled for x86 64.
+Now it has to cross compile it for.
+So you have to again generate this image by running bit code image minimum.
+Once the image is generated, you can run this particular command run core image minimum.
+So.
+Or you can specify the chemo arm also.
+So run chemo also works.
+Some chemo.
+Chemo.
+Image.
+Minimal.
+The image name which you have generated.
+So by default, this will take chemo arm as a machine.
+If or you can specify chemo arm for safety and then you can specify the image name.
+So you can see now this is running on chemo.
+So we are now have generated an image.
+The.
+There is no password.
+The username is root.
+Now we can verify the image.
+So it's an armv7 processor.
+And we can also verify this.
+Mr. Armv7 and it is using the same kernel image.
+So the same source, the same metadata.
+But you have changed the machine here.
+And now you have.
+You can also see the size of this.
+So it is the size is very less now for it has generated only six megabits of megabytes of raw tables.
+So very minimal image.
+And you have all those.
+Utility is present.
+You have everything here.
+You have been has been everything.
+So we have date command.
+It's using a busy internally to so we have very minimal size of the root FS.
+So you can power it off now.
+So we have generated an image for x86 64.
+We have generated an image for.
+
+--- Run QEMU in nographic mode ---
+
+So you can see chemo is launching an emulator.
+Each time you say run chemo is minimal.
+Is actually launching an emulator.
+It's different UI, but I want everything under this particular console.
+I do not want a UI.
+I want to run without graphics.
+So what I can do is I can use the no graphic option of this particular script.
+And when you use this it will not start a UI and it will use this particular terminal.
+So it will actually create a serial port and then it will go into the serial mode.
+So I say no graphic.
+And this time you can see it is not creating a UI.
+Everything is running in the console.
+Very useful.
+Right?
+Instead of going to a UI and everything, you can do everything on the console itself.
+So it is running it on this particular serial port.
+And.
+The same machine.
+It looks better now.
+The UI is not so great and with the console it looks better.
+So you can also stop this.
+Want to see what all USB devices are present.
+It says USB not found because I have not.
+USB is not present in this particular image.
+And there are many packages which are not present here.
+So if, say, it is not present, if I say BC, which is calculated, this is also not present.
+So there are many tools or utilities which we commonly commonly use are not present.
+Diff.
+Diff is there.
+So there are many tools like want lsusb to be used to be present on my device.
+So what can I do?
+Want to be present.
+So let's see what we can do for you and all.
+
+--- Add lsusb to Yocto Image ---
+
+So to add a particular package.
+In your root file system.
+So we want to add it to a root file system, right?
+You have to again update the local code.
+For now, we will be updating local code in our future sessions.
+We'll be creating our own images, not be updating local codes.
+We'll create our own images because when you delete your build folder, the local conf is gone again.
+Next time you have to manually again copy.
+You have to make the changes to local codes.
+But if you create your own recipes, you can create your own layers and then you create your own images.
+You can have all those and we'll be seeing all those in detail in our upcoming sessions.
+So the syntax to add any packages image underscore install plus equals to recipe name.
+The recipe name for USB is USB utils, so I can either use image install plus equals two or the other.
+Syntax is image install underscore append.
+So when you are using append you have to add a space.
+This will be covering in detail in our upcoming sessions.
+The syntax of place equals to what is double quotation etcetera.
+We'll be seeing all those.
+So now let's add this particular package.
+So I have not added this.
+So this is real time.
+Now you may install plus equals to.
+USB.
+Noodles.
+Now let's generate the image.
+Let's generate a minimal image.
+It took some time to perform the build.
+So now let's run the chemo.
+Depend on your ram depend on a number of processors.
+You have.
+The time it takes to generate a build will vary.
+Still we don't have USB.
+Let me check.
+Let me do it.
+Give me one minute.
+So let's actually check the environment which we have added.
+We have added.
+The image underscore install so you can check the value which is present on the image install.
+Whether we have USB present or not.
+So you can check whether image install is having USB utils or not.
+Scoring a minimum.
+So you can see here, even if we have added USB utils in our conf it is not present in image install.
+So whenever you are making changes to local conf place equals to is not preferred.
+You have to use append there.
+So let's modify it and let's add append.
+Outer space.
+Now you can verify it with the image install has USB utils or not.
+Now USB utils is there.
+So now let's generate an image.
+So last time when you did it, the USB utils was not present.
+So when we said USB, that's the reason it is not present in the image.
+Now you can see here it is generating a build USB, it is getting the packages, configuring it and
+it will perform a series of tasks.
+So the big bank has now found that USB utils is being added to image.
+So it has fetched it.
+Now it is configuring the USB utils.
+So it's compiling so so the and then it is actually generate an image and it will install and package
+it.
+Finally it will generate a route for us.
+So it is running a series of ordered tasks.
+So now it is generating a rootfs which will have the USB utils.
+So we have the image.
+Now let's run chemo.
+So now you have USB working.
+So we have added USB package to our route successfully.
+So this is how you can add a package.
+We'll be going in deep how to add different packages applications to your root.
+This was just a demo of how to add a particular package.
+So we have taken USB as an example.
+For this we can add BC, which is calculator, we can add different different things.
+
+--- Build and Run Core Image Sato ---
+
+You can also generate a shadow image.
+We have generated a minimal image which does not have any.
+You can also generate an image core image.
+Shadow is the image name.
+It is an X11 Windows system based image.
+It has a shadow theme and a mobile desktop environment.
+So run this Bitbake setup and then once the image is generated, you can use chemo chemo.
+So I have already generated the image so I can start it again.
+Run chemo.
+Chemo arm Core image set.
+So it's starting the base image.
+You can see the Yocto Project logo is coming.
+Previously we were not seeing the splash screen, so this is a splash screen.
+You can configure Yocto to have your own splash screen.
+We'll be looking into it in our upcoming sessions.
+How to have our Own Splash screen, What all Changes we Need to make.
+Taking time to load the GUI.
+So let's wait for.
+Let's wait for a few seconds.
+So you can see the guy is being loaded.
+And you have a symbol which has some of the options like file manager.
+Excellent.
+So we have some applications and you have a desktop.
+You have.
+Xserver running Excetera.
+So now what I did is just shut it down.
+So.
+Sitting down.
+So it is displaying the splash screen.
+So we have seen minimal image.
+We have seen a graphical image.
+
+--- What is metadata ---
+
+So we have seen in our last session what is metadata?
+And we know hockey is a combination of bitbake, which is a task parser or task scheduler and metadata.
+And we have also seen that metadata is a collection of configuration files, recipes, classes and includes.
+So now let's understand each of these in detail.
+
+--- What is recipe ---
+
+So what is recipes from a non yocto background?
+When we say recipe, it means it is a set of instructions that describe how to prepare or make something,
+especially a dish.
+So from an onion it is a set of instructions on making or preparing something.
+Coming to Yocto terminology.
+When we say recipe is a set of instructions again, but this is read and processed by the bitbake.
+So instructions set of instructions which are processed by the Bitbake we call it as recipe in Yocto.
+And the extension of this recipe is dot Beeb.
+So with bake you can think of as a bit big.
+So extension of a recipe is Beeb.
+What information does a recipe contains?
+So a recipe contains where I can get my source code where to download the source code what all patches
+have to apply after downloading the source code.
+How to configure the source code How to compile this.
+What are the dependencies, library dependencies, runtime dependencies and how to install this?
+What is the license of this particular software component?
+So all this for a particular software component.
+So describes all this for a particular software component.
+So is a set of instructions.
+This instructions is nothing but where to get a source code.
+What all patches to apply configuration options compiler compilation options like whether to use GCC,
+whether to use cross compilation GCC, whether to use CMake, whether to use Autotools.
+All those is here.
+Then you have.
+This is this particular set of instructions are red and processed by the Bitbake, and the Bitbake then
+will generate a set of ordered tasks and will perform those ordered execute those ordered tasks.
+Examples of recipes are.
+And you can see how the naming it is.
+We'll be seeing in detail what is the naming convention.
+But the extension of a recipe is.
+So this recipe is.
+For a component.
+So this recipe contains how to download the way to get source code of Dhcp and what all configuration
+I have to apply options how to compile this and how to install what is the license.
+Same is for the streamer Dhcp.
+So the SAP describes this information for a particular software component.
+
+--- What is configuration file ---
+
+Then we have configuration files and in our last session we have already modified one configuration
+file which is local dot conf.
+So the extension of configuration files is.
+Dot conf.
+So configuration files hold global definition of variables.
+There are multiple kinds of files, so some files they hold.
+Global definition of variables.
+Some hold user defined variables and some contain hardware configuration information.
+So these are all files.
+Configuration files are used by the build system to build and generate an image for a particular hardware
+platform.
+So using this, all variables which are defined in in global file, in a user defined file and hardware
+configuration file, the build system will read this and it will decide what to build and which image
+to generate what should be in the rootfs, which bootloader to generate, etcetera, which bootloader
+to use all those.
+So the different types of configuration files.
+One is machine configuration file.
+It is specific to the machine.
+For example, chemo arm, chemo, x86, Big Beaglebone, Black Raspberry Pi.
+Each of them will have one machine configuration file.
+Then we have distribution configuration file.
+Each of the distro will have a distribution configuration file, so we are using it as a distro.
+So distro.com will be present for pokey.
+When we create our own distro we have to create this particular file.
+Then we have compiler tuning options.
+With which architecture to use and all and all.
+All the layers.
+If you're using GCC, all the GCC related sub flags will be present in the compiler tuning option.
+Then we have common configuration options and then we have user configuration options.
+We have already seen user configuration option and you do a source on the script.
+It will generate a local dot conf file where you have to specify which machine you want to build the
+image.
+
+--- What is classes ---
+
+So we have seen recipes, we have seen configuration.
+Then we will.
+Let's see, what is classes.
+So in Yocto class files are used to abstract common functionality and share it among multiple recipe
+files.
+So if there is a functionality which we can share among multiple recipe files.
+We can keep that functionality in class.
+So again, once we have placed it in a class file, if I want to use that such class, I can simply
+in the recipe, I can inherit the class.
+So I can write like this, inherit the name of the class.
+Extension of this.
+Classes are class and they are usually placed in classes folder inside the meta directory.
+So there is a classes folder.
+This is the standard you have if you are having a functionality which you want to share among multiple
+recipes you do not want to duplicate.
+So you want to reuse the functionality.
+Say you want to reuse how to build a kernel among multiple recipes so you can create a class and then
+you can say inherit kernel dot class.
+And now this functionality is available to your recipe.
+So where they are placed, they are usually placed in the classes directory inside the meta folder.
+Example of classes are cmake dot class.
+So if your recipe is using cmake, so you have source code which can compile which can generate an executable
+using cmake.
+So you can just say inherit CMake and now you have the functionality of CMake.
+Then you have colonel class, this particular class, it handles building colonels.
+So it contains code to build all the colonel source trees.
+Then you have module dot class.
+So it provides support for building out of free Linux kernel modules.
+So you have your kernel module outside the Linux source code.
+So module dot class supports building out of free Linux kernel modules, so all the classes they are
+present in meta folder meta.
+Classes.
+So you can see all the classes are present here, so they are present in the classes folder inside meta
+folder.
+So suppose if I have meta key.
+It may not have classes.
+It has classes.
+Some layers, some folders, some meta folders may not have.
+Classes.
+Some may have classes.
+So here Metro is not having classes.
+So if you have a folder meta folder, what we call as meta folder is a layer.
+And if this layer is sharing, some of the recipes are sharing functionality between common functionality,
+you can keep it in a.
+Class and this class should be created.
+A class folder should be classes folder should be created.
+And then you have to keep your common functionality in this particular.
+And file in this particular folder.
+So we have seen the main types of files.
+One is a recipe which contains a set of instructions on how to which is actually read by the bitbake.
+Then we have configuration which holds variable information which is used by again build system to perform
+what to build on, which platform to build and what image to generate, what should be the packages
+which should be present in this image, etcetera.
+Or all are stored in a configuration information.
+And then we have classes which are used to share common functionality between the.
+
+--- What is Layers ---
+
+So now there is one more term which we call as layers, which is frequently used in Yocto project layers.
+What is layers?
+Layers is a collection of related recipes.
+Or you can say layers are recipe containers folders which actually store the recipes.
+So folder you can think of a folder as layer, but which actually contains recipes, does not contain
+videos and text files.
+Folders which actually contains recipes.
+We call them as layers.
+So the naming convention of typical naming convention of layers is meta hyphen, the name of the layer
+and you can see poky has the following layers if you go into poky.
+So this is the convention naming convention which we have to follow.
+It's not compulsory, but it's better if we follow this convention.
+So meta hyphen the layer name and the poky has.
+I can say this.
+The following layers.
+Meta.
+Metta Perky.
+Metta Self Test.
+Metta Skeleton.
+So all this, all the folders which actually starts with Metta, we call them as layers.
+Again inside layers.
+And the ships are divided into parts.
+So depending on the type like the ships are again divided into, you can see here if the ship, depending
+on what type of the software it is, if it is a DSP, it will be placed in recipes, BSP, if it is
+related to connectivity.
+Like ifconfig or ssh, it will be placed into connectivity.
+Again, we have different thing.
+Like if it is related to graphics, it will be placed here.
+If it is related to multimedia, we'll be having a folder multimedia for real time and support is and
+if you have, if you have particular software component is not falling in any of these, you can keep
+it in the support.
+So recipes layers are a folders which actually stores recipes inside this.
+This folders have a naming convention which starts with meta.
+Inside this meta folder again, we have sub folders specific to the components like software component
+types.
+Depending on if it is a kernel, we will have recipes kernel if it is connectivity, Wi-Fi and all,
+we'll be having recipes, connectivity.
+If it is multimedia audio images and video, we'll be having recipes.
+Multimedia.
+If it is related to U-boot or any other BSP, we will be having it in recipes BSP if you are having.
+Kernel modules, you will keep it in recipes kernel.
+
+--- Why Layers ---
+
+So why do we need layers?
+So layers.
+They provide a mechanism to isolate metadata according to functionality.
+So for instance, bsp's distribution configuration, etcetera.
+So to isolate or to have metadata according to functionality, we have layers.
+So you could have a BSP layer like we have here.
+You could have a layer, you could have a configuration layer, you could have a middleware middleware
+or an application layer.
+So if you put all this.
+The ship is in one layer.
+It complicates and feature customization and reuse.
+So this is the reason we have to isolate layers according to the functionality.
+So in our POC we already have meta key, which is a distribution layer and we have meta yocto, which
+is a BSP layer which has the configuration for BSP or support for Beaglebone Beaglebone black edge router
+and generic Intel machine architectures.
+So layers are divided according to the functionalities as well.
+So you have a layer, then you have a layer, you will have a security layer.
+So software update layer, there are different layers.
+So layers allow you to easily add entire set of metadata or you can replace the existing sets with the
+other sets.
+So with layers you can easily add.
+So layers is nothing, but it has recipes.
+Recipes are nothing but metadata, so layers they allow you to easily add entire set of metadata or
+to append or replace set of current set of metadata with other sets.
+So meta key.
+It is itself a layer which is applied on top of the core metadata layer meta.
+So we have meta key.
+What is a layer?
+It is actually applied on top of the meta, which is core.
+So you can apply or you can modify the functionality provided by one layer in another layer which will
+be seeing how we can do it in our upcoming sessions.
+So there is something known as Append which will be looking in our upcoming sessions.
+
+--- Find out layers used by bitbake build system ---
+
+So how do I find out which all layers are used by my belt system?
+So there is a file layers.com which will be generated when you start the build.
+So this file is not present.
+When you download the source code, when you source the init build environment script, this file is
+present so when you source it.
+This file is created by the Bitbake.
+Not.
+It is created by the script.
+So this file has a layers variable which will tell us what all layers are being used or what are the
+layers which Bitbake actually uses to find the recipes or to generate a build.
+So let's see that file.
+So conf blizzcon.
+So there is a variable here.
+Layers.
+This variable will tell what all layers should should the bitbake parser actually read.
+So even if we have here the poky.
+We have five layers, but we are only including the three layers.
+So when you read a source, it actually only included these three layers, which is a core in the distribution
+layer and the BSP layer.
+So layers will tell the bitbake what all layers you have to find out.
+Even if you have multiple layers, Bitbake will not go into all the layers you have to specify.
+Be BlizzCon.
+So if you have added a new layer, you have downloaded a new layer, you have to add it here.
+In this particular file, we'll be doing all this in our upcoming sessions.
+So there is one more command to find out which all layers are present.
+So the command is bitbake hyphen layers show layers.
+So for this we have to first source.
+The init script.
+Now you can use bit layers.
+It's already saying Bitbake layers handle common layer tasks.
+We'll be looking into all these tools.
+So bitbake layers.
+So layers.
+So it is now saying.
+These are the layers which Bitbake actually is going to pass.
+And this is the same information which is present in layers.com.
+So suppose.
+Let's see.
+Let's see what happens.
+If I just update it, just say I will just comment this and I will say bit big.
+So let's.
+So comment is.
+Saying this.
+Listen, let's delete this.
+Now it's only showing the two layers, the meta and meta blocking.
+So Bitbake hyphen layers actually reads this file.
+And it will actually display what all layers are present.
+So comment is actually this is a string, so you can add add hash there.
+Comments you can add above this.
+Like this.
+This file is read by Bitbake layers.
+Surely as command.
+Now you can see it has added meta BSP.
+
+--- Where to get layers ---
+
+So you can include any number of available layers from the Yocto project.
+So how can I get a layer from where I can get a layer?
+So this is a website where you can get layers.
+So this is the website layers.openembedded.org.
+You have all the layers present in this website so you can create your own layer and then you can publish
+it so others can reuse the layer instead of they're doing it again.
+So let's see this website.
+So you can see here we have different layers open embedded core, which is our core.
+Then we have layers for different DSPs.
+AMD Commons vote Common support Layer Meta AMD.
+So we have different layers now with a beagleboard.
+Support for beagleboard.org devices for microchip sources.
+You have meta layer.
+So different vendors, they are having their own layers here.
+For Intel you have meta Intel.
+So you can search for here.
+Suppose I want to search whether there is a layer for Raspberry Pi.
+I want to build Yocto for Raspberry Pi so I can just search rasp.
+And you can see here there is a layer known as meta Raspberry Pi, which is for Raspberry Pi support.
+So again, you can also search here recipes.
+Like, if I want to search for the HCP, which we already have to give us where all the SCP is present.
+So recipe 4.4.2 is present in core.
+Suppose some recipe may not be present in your particular.
+Players like you have already three layers meta core and meta meta.
+You can search here for a recipe.
+You can also search for machines.
+You can also search for classes.
+You can also search for distros.
+So there are different stores and storm We are using stone.
+There are multiple stores.
+So we are using pokey.
+Meta.
+Pokey.
+So we are using meta pokey.
+So we have listed as pokey.
+If I want to use a different store, I can have include this and I can modify the local.com file to
+say that to inform that I want to use this particular distribution.
+We can also create your own distribution, which we'll be doing in our upcoming sessions.
+
+--- Yocto Project Compatible Layers ---
+
+Then we have something known as Yocto project compatible layers.
+So Yocto project compatible layers.
+You can find it here.
+These are the layers which are fully tested and compatible, fully compatible with Yocto project.
+So what is the difference between this link and the previous link?
+The previous link was open embedded layer index.
+That particular that particular link, it actually contains more layers, but the content is less validated.
+The layers which are present here in this particular link, which is a yocto project, compatible layers,
+these are fully tested and they are compatible with Yocto project.
+Whereas those layers are not universally validated.
+So those layers will actually have the compatible layers.
+They have a logo like this.
+If you see this logo, this means this layer is compatible.
+Layer.
+Yocto Project compatible layer.
+And it is fully tested.
+
+--- What is image ---
+
+One more terminology which we need to understand is image.
+We have already seen one image, two images.
+One is a core image, minimal.
+We have already also seen core image.
+What is an image?
+Image is also a recipe.
+We call it as a top level recipe.
+It has a description.
+It has a license, and it inherits a class.
+The name of the class is Core Image.
+So a recipe which inherits core image class we call as image.
+So recipe, which inherits core image class.
+So this image is actually used along with the machine definition.
+So Machine describes the hardware which we are using and the capabilities.
+Whereas image defines how the root file system is built, what all packages are present in the root
+file system.
+Pokey provides several, several images.
+So images are stored in images folder.
+So inside the layer, any layer you have the folder sub folders.
+Inside this sub folders you will be having images folder.
+Inside, which you will have.
+They made recipes.
+So images are again a recipe.
+So you will be having extension as.
+So if want to check what all available image recipes are present, I can use this simple command.
+So these are the various images which are present in different layers.
+So images are present inside layer, inside layer, sub folder, sub folder.
+There's a folder known as images.
+You can find it there.
+So you can see we have core image, minimal dot, which we have used in Bitbake core image minimal.
+Then we have core image chateau.
+So you can see this is present in a different folder.
+Core image.
+Minimal is present in a recipes core folder.
+And core image is present in a recipes set folder.
+Then you have something known as core image.
+Core image.
+Real time image which is present in that folder.
+
+--- What is Package ---
+
+Then we have packages in non yocto terminology.
+When we say package, it is a any wrapped or boxed object or group of objects.
+So any group of objects which are boxed or wrapped, we call it as package.
+In coming to Yocto, a package is a binary file with the following extension.
+It can be an package, it can be a Debian package or it can be an IP package.
+So a single recipe it can produce many packages and all the packages which the recipe is going to generate
+are that information is actually present in the packages variable.
+So for example, if I go to this particular recipe, if.
+This is a recipe which provides support for the tag image file format.
+So you can see this recipe has license information, where to actually get the source code, then the
+checksum.
+So I can actually validate whether this is actually the same which is present in this particular link.
+I have not downloaded some other content, then I'm inheriting some of the classes.
+Then configuration information is present.
+And you can finally see here packages.
+So this particular recipe generates two packages.
+One is f x, x, then we have f f utils.
+So these are the two packages which are generated by this particular recipe.
+So package is a binary file with name or Debian or ipkg.
+So we have seen different terminologies which are used.
+We have seen what is a recipe.
+We have seen what is a configuration file.
+What is a class or what is a class?
+What is a layer?
+We have seen what is.
+Package.
+And what is image?
+This is all.
+If you understand, then it is very easy for you to learn your code.
+So whenever you read some page on Yocto, you can easily correlate.
+What is he saying?
+What is being mentioned in the particular link or in the manual?
+
+--- Explore Poky Directories ---
+
+So now let's understand what all folders are present inside the source tree.
+So we have source tree.
+We have.
+Different folders.
+The first folder is bitbake.
+So this folder Bitbake is actually containing.
+The big command.
+The Bitbake command, which we use, is actually a script.
+So it's actually a Python script.
+So Bitbake command is present here.
+There are other commands.
+All all the other commands are also present here, like we have bitbake layers which we recently have
+used is present here.
+So all the commands related to the Bitbake are present here.
+It holds all the Python script used by the Bitbake commands and this particular bin Bitbake hyphen bin
+is placed into the path environmental variable so they can be found.
+So if I look when we do source right, this actually happens.
+When we do source, it actually adds.
+The Bitbake bin folder into the path environmental variable so we can easily find bitbake.
+So when when I do sometimes.
+So sometimes you say like you go into, sometimes you go into the build folder.
+And you say Bitbake not found.
+It's a bitbake.
+And it says command not found.
+This means we have not have.
+You have not sourced the build in environmental script.
+This is the reason because the Bitbake is present in Bitbake bin and this particular path is actually
+not added to the path environmental variable.
+And we know what is the use of path.
+So as this Bitbake bin is not present in this particular location, the path environmental variable,
+it is not able to find out the Bitbake script.
+It says command not found.
+So whenever you see this, this means you have not sourced in it.
+Build environment script.
+Then we have documentation.
+Inside the pokey folder.
+So it all contains some code to generate the manuals.
+Different kinds of manuals we have.
+So all like mega manual, all these different manuals.
+So it contains the source code to generate nice PDFs, the Yocto project documentation.
+Then we have meta folder.
+It is not a folder we can each time we see, we see the name Meta, we have to say is a layer and we
+know what is a layer.
+A layer is a folder which actually stores recipes, collection of recipes.
+So we have meta, which is actually the openembedded core.
+This is a layer which is this is a metadata which is shared between the Yocto project and the Openembedded
+project.
+Then we have meta key.
+So this is the distribution layer, key distribution layer.
+So we also have meta key, which is a distribution layer.
+Of much information here.
+So this actually contains one of the important file is.
+vb.com.
+Sample and local dot conf sample.
+If you go and see this file.
+This is the same file which is actually copied in the source.
+So when you do source, you need build environment.
+What happens is this particular file will be copied and route will be replaced with the actual build
+location.
+So whatever the build you are specifying, it will be replaced here with route.
+So this is the file which will be actually copied into the build conf BlizzCon.
+And then you have local conf sample.
+So again, this file is also being copied into the build folder.
+So this is, this files are present here, so local conf dot and BlizzCon, they actually rename this
+file.
+So the script actually does it.
+The init build script actually performs this operation.
+So this is presently in the meta folder.
+Then we have metal skeleton.
+So you're only going to discuss the important folders.
+So meta skeleton, it actually contains recipes.
+Skeleton recipes.
+Like if.
+Template recipes for BSP and kernel development.
+So if I want to find out a recipe, say go to recipe skeleton.
+It has a template recipes on how to add a user to a to a to your image, how to add a service to your
+image.
+So all the template recipes which you can take it as an example so you have different kernel kernel,
+how to add your own Linux custom kernel recipe of that.
+How to add your own out of sauce kernel module.
+So you have out of three kernel module.
+How to add it.
+So all this recipes skeleton it contains.
+Metal skeleton actually contains templates of various recipes which you can refer.
+Then we have meta yocto BSP and we have seen it actually contains bsps for multiple hardware devices
+like Beaglebone, edge router and all.
+Lets go there.
+So you can see there is a folder and then there is machine folder and you can see there are configurations
+for different machines.
+Beaglebone Edge router x86 64, which is 64 bit Intel machines and 32 bit Intel machines and then some
+Freescale device.
+So this particular layer, it actually contains the BSP for different devices.
+Then we have scripts folder.
+So this scripts folder, it contains scripts which are used to set up the environment development tools
+and tools to flash the generated images on the target.
+So let's go to Scripts folder.
+So there are different scripts.
+We'll be looking into each of the script like Pens Dot will be.
+We have already used one of the script, which is Run.
+So we have to in our course, we will be going through maximum all these scripts like build history,
+diff build status diff.
+Maximum all the scripts we will cover in this course.
+Then we have license.
+The license under which the book is distributed.
+So it's a mix of GPL and MIT license.
+So there's a license file.
+Licensed and licensed.
+
+--- Exploring Build Folder ---
+
+Now let's we have seen the pokey folder.
+Let's look into the build folder which is actually generated when we do when we generate when we do
+a source on the script and we when we do a bit bake on an image file.
+So first, let's look into the con folder.
+So when you run source cookie init build env will actually create a build folder which we have already
+seen.
+We can also give a different name by specifying one more argument whatever name you want, but if you
+do not give an additional argument.
+So it will actually.
+Just create build folder.
+So when you do a sauce, it actually creates a build folder.
+Inside this build folder, it will create called folder, which has two files.
+One is local dot conf and other is BlizzCon, the local conf, the configuration file, it configures
+almost every aspect of the build system so it contains the local so as a name local local user settings.
+So local dot conf contains local user settings.
+Examples of such settings are.
+Let's go there.
+Conf local conf.
+So this file is your local configuration file.
+And where are all the local local user settings are placed?
+So the first is machine for which machine you want to build, the kernel, the rootfs, the bootloader,
+etcetera is being specified by writing this particular environmental variable machine.
+So we have different already commented out.
+Whatever you want to generate which machine you want, you can just uncomment it by default.
+It is setting it to the Qemu x86 64.
+So this is the default machine.
+Then we have something known as underscore dir.
+So download directory where to place the download.
+So this particular variable actually points to a folder where we want to place the downloads.
+You do a first build system.
+The build system will download many different source code, so it downloads source code of all the software
+components which you are using from various projects.
+These all are stored in underscore dir folder, so default location is.
+Under the build directory, it will create a downloads directory.
+So the underscore dir.
+So this is a default location.
+So top dir means the build folder inside which we have a downloads folder.
+So let's go there.
+So all the source code.
+Tar files, git files, git repositories and repositories all are present here.
+You can see here all are present here.
+So it's almost.
+Don't differ for each and every file.
+Each and every.
+Software package downloads.
+It actually creates a file known as done to verify it is successfully downloaded so you can divide it
+by two to find out how many packages it has actually downloaded.
+So underscore is where all the downloads are present.
+Then we have tmp underscore dir, which is where it places the build output.
+So now it has downloaded it.
+So it has to now use a temporary folder to extract it, configure it, compile it and all and to generate
+an output.
+So this is all happens in the temp directory.
+So this option specifies is where the bulk of building work should be done and where build bake should
+place its temporary files, source extraction, compilation and output.
+So you have it.
+Empty, which is a default.
+Is temp folder under top dir.
+Top is build folder.
+So it's saying that keep in mind.
+The extraction and compilation.
+So it's saying that keep in mind the extraction and compilation of many applications and the tool chain
+can use gigabytes of hard disk space.
+So you need minimum like 30 to 50GB of hard disk space.
+So let's actually look into the size of this temp folder.
+It's already saying it takes a lot of size.
+So let's say minus temp.
+So let's wait.
+Let it actually calculate the size of the temp folder.
+So.
+The important point here about local comp is this is a convenient way to override several default configurations
+or all the yocto project tools.
+So we so we know the default configuration is for underscore Dir is under the top dir.
+This is a build directory.
+So.
+And we know where it is placed under temp folder under top.
+If I want to modify it, I can modify it in local conf.
+So I have already downloaded the source code.
+I can, I can move the download folder underscore in some other location and next time I clean the build
+folder, I delete the build folder and I do a source init build.
+I can now update dll underscore dir to point to that particular location.
+So we can change or set any variable in this particular file.
+We can also add additional packages to an image file which we have already done, like through image
+install append.
+We have added Lsusb to the Chemu image in our last session.
+So it is very convenient, but it should be considered as a temporary change as the build conf local
+dot conf file is not tracked by any source code management system.
+So this is the important point here.
+The build on local.com is not tracked by any source code management system like git or svn.
+Because this is present, this is actually generated when you actually do a source.
+So how to handle all these changes?
+We'll be looking in that.
+Still calculating because it's a lot of space is being used by temp.
+It's taking time to calculate the folder size of temp.
+So then we have also seen the conf file.
+This particular file informs bitbake what all layers you want to consider during the build.
+So you can manually add any custom layers.
+Like previously we only had three layers.
+Now if I have my own layer known as meta layer, I can add it into the layers.
+Now, this particular layers Whitbeck now can also include recipes from this particular layer.
+So blizzcon and local.com are the important files you need to.
+
+--- BB_NUMBER_THREADS ---
+
+Then we have something known as underscore number threads.
+This is a configuration or a variable which determines number of tasks.
+The bitbake will perform in parallel.
+So how many tasks can Bitbake perform in parallel is determined by this particular variable.
+Underscore number.
+Underscore thread.
+So note this task are related to Bitbake and it is nothing related to the compiling.
+So Bitbake is a different thing.
+Bitbake is a task parser to generate a set of tasks and then it will execute those tasks.
+So this.
+How many how many tasks it can generate in parallel is determined by this particular variable underscore
+number underscore thread.
+So default is number of CPUs which are present on your system.
+So you can see here temp is taking almost 26GB.
+Temp folder is taking 26GB, so it will take a lot of space.
+So to have yocto, you need like minimum 30 to 40GB of space.
+So let's actually see the number of threads which are present here.
+So what I'm doing is I'm reading the environmental variables of core image, minimal recipe.
+So bitbake hyphen E is for environment.
+And then I'm checking the value of number of threads.
+So this is how I do it.
+So bitbake hyphen e will actually dump us will actually output all the environmental variables from
+that.
+I'm actually only reading for number of threads.
+So this actually six and I have six cores on my system.
+So when you say bitbake hyphen.
+E core image minimal will give all the environmental variables to give all the environmental variables,
+all the information of recipes.
+But we were only interested in bib number threats, environmental variables.
+So this is how I have searched it.
+It should start with underscore number, underscore threats and then it should have an equals to.
+Thing.
+So this is how we have searched and we got the number of threads when Bitbake runs is six, so it uses
+all the process.
+If I can modify this in the local conf, I can say I only want to use one CPU and then I can set it.
+Number of threads equals to one.
+
+--- PARALLEL_MAKE ---
+
+Then we have parallel make.
+So this is corresponding to the hyphen make option.
+So we already have.
+When someone has built Linux kernel, we say make hyphen j eight if we have eight cores.
+So if you want to pass that particular number to the make, you can specify it in this particular environmental
+variable.
+So it specifies the number of processes the new make can run in parallel on compilation task.
+So this is different.
+This is for Bitbake and this is for the make command.
+So it also defaults to the number of CPUs on the system.
+So let's actually search.
+How many we have.
+How many is actually allocating?
+So it's allocating six.
+So it's saying this is the option which is actually given to the male.
+So make hyphen six.
+So whenever some particular software is compiled through make command, you can this is actually passed
+parallel underscore make.
+
+--- Where should we place contents of local.conf ---
+
+So the question was, as we said, conf local conf is not part of the source code management.
+It's not part of any SVN repository or git repository.
+So what all have some modifications like I have my download folders in some other location.
+So now where should I place the content of conf local dot conf as this is not part of the build folder.
+So in general, everything in your local dconf should be moved to your distro configuration.
+Finally, you should only set distro.
+This a digital variable in local dconf.
+Which you have to set while you are doing a build.
+So most of the changes which you have, you have to move it to the distro configuration.
+So and then you have to only set this store.
+This store by default is spooky.
+So you have to create your own distribution and then you have to set actually this particular field.
+
+--- Other Directories ---
+
+Then we have some other folders inside.
+We have downloads.
+We have seen what downloads contains all the downloaded.
+So guitar, bass and the git repositories, which is used in the build.
+We have something known as state cache which will be looking in our upcoming sessions, which is shared
+state.
+Catchy.
+It actually catches all the generated builds.
+Then we have temp which holds the build system output.
+There is a folder inside which.
+Temp.
+Deploy images.
+The actual images are present.
+And we have caches folder.
+This is a catchy which is actually used by Bitbake tool.
+A Bitbake pass.
+
+--- Build Workflow ---
+
+So what is the whole workflow?
+How when we say core image minimal or when we say bitbake core image, what happens?
+So this is the workflow developers.
+They specify the architecture to specify the machine, they specify the packages which are going to
+install and all.
+Through the various configuration files and recipes.
+Then the build system starts.
+Fetching and downloading the source code from the specified location, which we have mentioned in the
+recipes.
+So it's the build system supports downloading tarballs.
+It also supports cloning the repositories from svn checkout from from git and svn.
+Once the source code is downloaded, it extracts them into a local work area inside the temp folder.
+Then the patches are applied.
+What if there are some patches?
+The patches are applied.
+Then it will perform configuration on those source code.
+And it may generate a make file of the configuration and it starts compiling the software.
+After compilation is successful, it installs the software into a temporary area and depending on the
+user configuration.
+Binaries are generated, the packages are generated.
+Once the packages are generated, the build system generates a package feed which is used to create
+the final root file system image.
+Once the root file system image is generated, user can also generate an SDK for application development.
+SDK will be covering in our upcoming sessions.
+So this is how the workflow is.
+So you give this information, you view the user configuration, you give the metadata, the BSP configuration,
+the distribution configuration, etcetera.
+And this is the build system.
+This color is the build system.
+This build system.
+It will fetch the sources you will fetch from the upstream projects, local projects from various source
+code management.
+So it is fetching that.
+Then it is applying the patches that is performing configuration compilation and then it is generating
+the packages.
+Package can be a Debian package, rpm package and package.
+Once the packages are generated it will actually run a QA.
+And a package feed is generated.
+So this is the next step.
+Once all the packages are generated, build system will generate a package feed, which is again now
+using this package.
+Feed images can be generated and can be generated.
+So this is what is present in that particular nodes and very easy to understand diagram you give input.
+The Bell System performs all these operations and you get images, which is the kernel image, root
+file system bootloader, all those.
+
+--- Images Generated by Poky Build ---
+
+So what?
+All images are generated by the pokey build.
+So the build system will generate images and it will place inside temp deploy images, machine folder.
+So let's actually go there.
+We have temp deploy images.
+So for each and every machine you generate, you will have a separate folder.
+So I have generated it for Qemu x86 64 so it will present in chemo x86 64.
+So what?
+All the images are present in this particular location.
+So temp deploy images and machine.
+The first image is kernel image.
+So this particular kernel image is a kernel binary file.
+In the name of the image depends on this particular environmental variable.
+Colonel, Underscore image type.
+So let's search for this.
+The naming scheme is determined by this particular environmental variable.
+So you should frequently use the hyphen command of Bitbake.
+So you saying that the name of the kernel image is image and it's actually this image present in the
+x86 64 folder.
+Then we have root file system image.
+The root file system for the target device it can be in.
+X3 or Pc2.
+What all file types should the build system generate?
+Depends on the.
+This environmental variable.
+So this environmental variable determines the root file system image type, whether you need a ext3
+rootfs.
+Bzip2 rootfs.
+Ext4 rootfs is determined by this.
+So it says the image types are tired or bz2 and ext4.
+So z2 is there here.
+Ext4 is also present.
+Then you have kernel modules.
+It is a tarball of all the modules which are built for the kernel.
+So this is.
+Present here.
+Depending on the architecture you like.
+If you are building for Beaglebone Black or your Raspberry Pi, you will also have bootloaders.
+So if applicable, there are bootloaders supporting the image.
+So for all these files, there are symbolic links.
+You can see here we have symbolic links like this image is actually a symbolic link to this particular
+file.
+So symbolic links are used to point to the most recently built for each machine.
+The symbolic links can be useful for external scripts which are needed to obtain the latest version
+of each file.
+So you have symbolic links, so you should always use the symbolic links instead of using the actual
+file name.
+Like this actually has a timestamp.
+So this is the timestamp.
+
+--- Save Disk Space ---
+
+So we have seen the build system.
+It is taking a lot of disk space.
+Suppose you want to save some disk space.
+So Bitbake provides you an option.
+The build system.
+It actually provides you an option to save the build space so you can tell the bitbake to delete all
+the source code build files after building a particular recipe.
+So how can I do that?
+When you say when you add.
+This option inherited underscore work.
+It will actually delete the source code to temporary files which are generated during the build while
+actually after building a particular recipe.
+So the disadvantage is.
+It's difficult to debug because all the temporary files which the build has generated is deleted.
+So there is one more option.
+So I do not want to delete the source code and build files for a particular recipe.
+What I can do is I can say underscore, work, underscore, exclude.
+So I do not want to delete the files used by this recipe.
+So underscore, underscore, exclude plus equals to this recipe.
+So let's add this option to our local conf.
+So I have added this now.
+Well, you have to generate the image again.
+This time.
+What Whitbeck does is.
+It will.
+Delete all the temporary files which are used by the.
+Recipes.
+So it will delete all the temporary files, all the source code.
+So as we have updated the local com, it is passing all the recipes again.
+That's why it's taking time.
+So let it complete the operation.
+Let's wait.
+It may take time.
+So let's wait until it completes and then actually check the size of.
+The temp folder.
+So you can see here it's doing underscore work on each and every recipe.
+Our work will actually remove the source code as well as the build files.
+So now let's look into the size of temp.
+Previously it was like 26GB.
+So now it's only five gigabytes.
+So almost 20GB is now saved.
+If adding this particular option underscore work.
+So if you have if you do not have like 30 to 40GB of disk space, you can first add this option and
+then you can generate an image.
+This way you can you can also use Yocto on a disk which is having less space.
+So 20GB of the source code and the temporary files which were generated during the build have been removed.
+
+--- Beagle Bone Specifications ---
+
+Good morning, guys.
+In this session, we'll be looking into how to build a yocto and yocto image for Beaglebone Black.
+So let's get started.
+So Beaglebone Black.
+Most of you have seen this.
+This is the Beaglebone black.
+So let's now look into the specs of Beaglebone black.
+Specification of beaglebone black.
+This beaglebone black is made by Texas Instruments.
+It has cortex-a8 CPU arm cortex-a8.
+And this is the SOC am335x.
+It has five MB of Ram.
+It also has an emmc storage of four gigabytes.
+So you can also use this storage or you can also connect an SD card to the device.
+It has a 3D graphics accelerator.
+It also has a floating point accelerator.
+It has 232 bit microcontrollers and it also has USB client for power and communication.
+It has a USB host you can also use as OTG.
+It has Ethernet, it has HDMI, so it has almost all the features it has.
+Two for two by 46 pin headers.
+So you can so it gives you a lot of pin out a lot of pins.
+Which has many buses.
+So you can either connect an I2 device or USB device, or you can also do a Uart and more.
+So it has a lot of functionalities.
+So it also provides a lot of expansion boards called cables, which directly fits into the device.
+So all most of all, the peripherals are present here except like few like Bluetooth is not present
+in Beaglebone black Wi-Fi is not present in Beaglebone black except those almost all the peripherals
+are present on Beaglebone black.
+So very nice device.
+It provides you a lot of pinouts and it has all the peripherals.
+
+--- Steps for Building Yocto Image for Beaglebone black ---
+
+So how can I build a octo image for beaglebone black So beaglebone It is one of the reference board
+of Yocto project, so we already have a layer meta Yocto BSP which has machine configuration for Beaglebone
+black.
+So if you go into Yocto source code, we have three many layers and our BSP layer is meta Yocto BSP.
+There is in this, there is a machine code machine and you can see here there are configurations for
+each and every BSP it is supporting.
+So for each and every BSP it is supporting, it has configurations, so it also has machine configuration
+for beaglebone.
+So it says Beaglebone Yocto machine.
+In description.
+You can see it is a reference machine configuration for beaglebone and Beaglebone black boards.
+We'll be looking in deep what is present in this file later.
+But for now you should know that Yocto has machine configuration for Beaglebone Black.
+So the first step is.
+Sourcing the init build environment script.
+We know what it does.
+It will add the bitbake bin folder as well as well as the scripts folder to the.
+Path environmental variable and if build folder is not present, it will create a common folder inside
+which it creates a local dot conf and blizzcon.
+So source.
+Let me say this is built.
+Beep, beep, beep.
+Beaglebone Black.
+Now it has created us and it has keyed into this particular folder.
+And now we have.
+Local dot conf.
+In this by default the machine is set to chemo x86 64, but we want to generate yocto image for beaglebone.
+Yocto.
+So you just comment this.
+And set this.
+So now you have the machine set for Beaglebone Yocto.
+That's it.
+This is one final one change.
+And now you can have your image generated for Beaglebone Yocto.
+So here what we did, it should be Beaglebone Yocto.
+Now you have to.
+Start the build.
+So start the build by running this command.
+Bitbake Core image.
+Minimal.
+So let's generate a minimal Linux image.
+So core image.
+Minimal.
+So now it starts fetching the it will go to each and every layer and it will start fetching all the
+recipes.
+So it is saying passing recipes and then it will start performing a build.
+So this build will take some amount of time.
+So what I did is I already generated a build and have kept a copy of the deploy folder.
+So after the build is completed, you will have your images presented.
+Temp Deploy images.
+Beaglebone.
+We know this is like all the images will be present at temp deploy images.
+The name of the.
+Machine.
+So it is a big if.
+It is beaglebone it will be beaglebone October.
+So your images will be.
+If it is chemo, it will be chemo x86 64 or chemo arm depending on what is your machine.
+So all your images will be present at temp deploy images machine.
+And now this folder will contain the first level bootloader or second level bootloader U-boot Kernel
+image device three blobs root file system and modules.
+So let's go there.
+So this is running.
+Let it.
+This is this Bitbake is started compiling each and every configuring.
+Compiling and started building.
+And finally it will generate an image.
+So I already have an image generated.
+So temp deploy images.
+Beaglebone.
+So I said right, the name should be.
+The name of the machine.
+It will be Beaglebone.
+Yocto.
+So we have here all those the first level bootloader.
+The second level bootloader u boot kernel image Z image and the root fs.
+It's also present here.
+This also having the modules dot rc file.
+
+--- Booting Process in Beaglebone black ---
+
+So let's first understand what is a booting process in Beaglebone Black.
+So the source in Beaglebone Black is Am335x.
+It is a complex piece of hardware.
+It only has a limited internal ram, so internal ram of Beaglebone Black is only 128 KB.
+So because of this limited amount of Ram, multiple bootloader stages are needed.
+So this is very important.
+The Ram internal Ram of Beaglebone Black is only 128 MB so it is 128 KB.
+This is the reason we need multiple bootloader stages.
+The each and every bootloader stages will systematically unlock the full functionality of the device,
+so all the complexity of the device are available to the kernel.
+So each and every bootloader it has a particular task to enable some some functionality of the device.
+Once all the bootloader stages are completed, kernel will have the full functionality of the device,
+so the four bootloader stages are.
+Rom stands for secondary program loader.
+Then we have u-boot.
+Finally, after this boot loader we will have the kernel image.
+
+--- First stage Bootloader:ROM Code ---
+
+So the first stage boot loader stage we call is Rom code.
+So the Rom is a firmware which is flashed on the device by the vendor.
+So for Texas Instruments it is Texas Instruments or Beaglebone Black.
+So Texas Instruments, they flash rom on Beaglebone black and this is the code which is automatically
+run on device startup.
+So when you apply the power, the Rom code starts running and this is hardcoded into the device and
+it cannot be changed by a normal user.
+So this is important.
+Rom bootloader code is the first code which will run when you power up the device.
+This is hard coded.
+You cannot change it, but it has two main functions.
+First one is configuration of the device and initialization of the primary peripherals.
+And the second functionality is ready the device for the next bootloader.
+So in this it will check for the next bootloader, which is secondary program loader.
+So it may check for in the emmc, it may check in the SD card or it may check in the USB.
+So it will check all the boot sources.
+And once it finds the secondary bootloader, it moves it to the into the memory to run.
+We know it has 128 GB of internal Ram, so it will move the secondary bootloader code into the internal
+Ram and it will start it.
+So this is the Rom code.
+The main purpose of Rom code is to set up the device for the second stage bootloader so each and every
+stage of bootloader will set up the device for the next stage.
+Rom code will set up the device for the second stage which is secondary program loader.
+So by default the Rom code will try to boot from the mk1 interface which is emmc.
+One is emmc zero is external microSD card.
+So the.
+Order in which it checks is first is on board, then it will check for microSD card.
+Then you add and USB.
+This is the default boot order of Rom code, but you can modify this boot order if you this is a switch
+s to switch.
+If you hold the switch during power up, the Rom will boot up from zero first, then zero which is external
+microSD card USB zero in Uart zero.
+So order can be changed by pressing a boot switch which is present on the board.
+S2 In this case, it will start fetching the secondary program loader from microSD first.
+
+--- Second Stage Bootloader: SPL ---
+
+Then we have second stage bootloader, which is a secondary program loader.
+We know that internal ram of.
+The Beaglebone Black is only 128 KB.
+So we cannot have a fully featured version of U-boot.
+U-boot fully featured version is 400 KB, so we cannot load 400 KB on 128 KB.
+So for this reason, a cut down version of U-boot called U-boot SPL or secondary program loader is loaded
+first.
+This will initialize the CPU and then it will load a fully featured version of U-boot.
+The name of the U-boot is U-boot dot img.
+So this is why we need a secondary bootloader.
+Second stage of bootloader.
+Because the internal ram of U-boot in internal ram of Beaglebone Black is only 128 KB and the u-boot
+size is like 400 KB.
+So we cannot load 400 400 KB on 128 KB.
+So what we do is we have a cut down version of U-boot which will actually start a fully featured version
+of U-boot.
+The name of this U-boot SPL is MLO, so the file name is MLO.
+Then the Rom code will search for MLO and this should be located on the first partition of your SD card
+or MSI and it should be formatted.
+That particular partition should be formatted as Fat32 or fat12 fat16.
+So MLO the secondary program loader should be present on the first partition and it should be formatted
+as Fat32 or fat16.
+
+--- Third Stage Bootloader: U-Boot ---
+
+Then comes the third stage bootloader, which is U-boot.
+U-boot is a powerful command based control.
+It has a powerful command based control over the kernel boot environment, and you can modify this over
+a serial port or a Uart.
+So user can control number of parameters like boot arguments and the device tree, etcetera.
+How this is possible.
+There is a file known as env dot txt which is stored on your storage medium.
+So by default, you will try to boot for this particular look for this device tree and pass it to the
+kernel.
+But in env dot txt you can specify a different device tree.
+So you can do very a lot of things using u-boot.
+You can also boot over dhcp.
+You can also get a Dhcp client through Dhcp.
+You can also get IP address and then you can also do an NFS.
+So a lot of things can be done using u-boot.
+So finally, once all is done, U-boot will load the kernel and the device tree source.
+It's not a device tree blob into memory and to boot the kernel with command line arguments.
+So you can all you can modify all of this.
+In the U-boat's command line interface.
+So u-boot is completed now kernel is initialized, kernel has booted, it has initialized and it will
+mount the root file system.
+So.
+The MLA.
+The secondary program Loader.
+Program Loader.
+The U-boot.
+And the kernel image on the device.
+Device Tree.
+It should be present in the first partition, which is formatted as part 32 and the root file system
+should be present in the second partition of the micro SD card, which is formatted as an ext3.
+So there should be two partitions for beaglebone to work.
+One is root boot partition, which has the kernel image device tree u-boot and the second program loader.
+And then is one more root root file system should be present in a ext3 partition.
+
+--- Booting Stages Terminology ---
+
+So this is a simple understanding of the stages.
+So the first stage you can say primary program loader is you can also call it as Rom code.
+So this is the actual program name.
+Then we come after primary program loader, we have secondary program loader, so there are multiple
+terminologies.
+So we say it is secondary program loader.
+Some say it is first stage boot loader and the name actual program name is or.
+Then comes the next stage, which is second stage boot loader, which is u-boot.
+And finally you have kernel.
+So these are the four stages of booting in a beaglebone black.
+
+--- Creating Partitions and formatting the SD Card ---
+
+So now we have the images.
+So we have here.
+The secondary program loader.
+We have u-boot.
+Next boot loader.
+Then we have kernel image.
+Then we have the root file system.
+So what should we do now?
+So we should format.
+We should create partitions to partitions which we which we mentioned.
+We should create them.
+And then we should format it like Fat32 for the first partition and ext3 for the second partition and
+then copy this.
+So let's do that.
+So for this you need a memory card reader and then you need a memory card.
+So I'm going to connect them.
+So I have connected them.
+So my memory card it is memory card reader.
+It is detected as sdb1 and sdb2.
+So it is slash dev SDB.
+So it is detected here.
+So what is the steps now?
+So you have to unmount them.
+So it is for me it is SDB.
+So I have to say SDB.
+One on depending on you have to.
+If you have you have to do.
+If you have both one and two, you do both one and two.
+So you do an amount.
+So we have unmounted both the partitions of the STB.
+So depending how many partitions you have, you will be getting that many numbers.
+Like I have two partitions, so I got STB one and SDB two.
+So now let's partition it.
+So for that, you use a disk.
+So the syntax is sudo fdisk slash dev sdb.
+So.
+That's it.
+This.
+It can vary.
+Like if you're using a card reader, it may get blocked if you're using a native machine.
+So this will vary depending on how you are, how you have connected your SD card.
+microSD card, how you have connected it.
+It will this name will vary, so you have to check it in the message.
+So we are using.
+Slash a disc, So.
+I have two partitions.
+Slash dev sdb1 and slash dev sdb2.
+So let's delete them.
+So we're deleting the partition.
+I have to add the select the number.
+We have two partitions, I select one that has been deleted a sprint.
+Now I only have one partition.
+Let's delete this partition and when as a parent I do not have any partitions now.
+Now we have to create partitions so we have deleted partition.
+Now create a partition called boot of 32 MB and type primary.
+So create a partition.
+Type is any new partition type is each one primary or extended?
+So say primary.
+Partition number, which one you want to give as a one first partition.
+How much default?
+There should be the first sector present.
+It should be the default value.
+What should be the last sector.
+So we have to give a size.
+Now I will say I will give a size of 32.
+And.
+Three.
+Mm.
+So it says, Do you want to remove the signature.
+Yes, I want to remove the signature.
+So we have created a partition.
+First partition of 32 MB.
+So we created a boot partition of 32 MB.
+Now let's create a second partition to hold root FS and give all the remaining space to this, to this
+partition.
+Let's give all the remaining space to this partition.
+So create the command to create a new partition is n.
+And it's a primary partition.
+The partition number is two.
+Default is this and enter.
+If you enter, it will give the full size.
+So it is saying it is creating a second partition of size.
+I have a 32 GB of micro SD card, so it is have given 32 GB.
+The remaining size is this.
+So now you have created two partitions.
+One partition is of 32 MB and second partition is of.
+The remaining size.
+Now we have to make the first partition bootable.
+So to set the first partition bootable or active, say A, and the partition number is first.
+So we have set the bootable flag on partition one.
+And we also need to format the first partition with Fat32.
+So for that we have to say T.
+Select the partition one and say it will give you the list of codes.
+And we are interested in this part.
+32.
+So see.
+Now we have changed the partition.
+Too fat.
+32.
+So we have now set active flag or mutable flag.
+And also we have formatted.
+We have set the partition to fact 32.
+Then.
+For the next partition.
+So let's print the partition table.
+No.
+Let's do it for.
+So we do not have four xt.
+So this step is not needed now.
+So let's say.
+It is not needed.
+So.
+Let me do it again.
+The that you have to say linux only.
+So we do not have ext3 and ext4 here you say 83 and this step was not needed.
+By default it was 83.
+So we have this.
+Partitions now.
+We have created two partitions.
+One is a Fat32 and it has a boot flag set of size 32 MB.
+And then we have created one more partition, which is ext 3 or 4.
+And it is having the remaining size now we have to.
+Issue that command.
+Which will actually write it.
+So this partition table will be now written into the slash dev SDB.
+So now we have created two partitions.
+Now we have to format the partition.
+So first partition should be formatted as fat.
+And also set the label to boot.
+So this is needed for mounting.
+So here we have one.
+Here we have sdb2.
+So first partition should be formatted as fat.
+The second partition should be formatted as ext4.
+So let's do that.
+We have command, which by which we can format.
+So I have formatted the first partition as fat and I have given the name boot.
+For the second partition.
+URL format it as ext4.
+This will take some time.
+It may take 1 or 2 minutes.
+So this has completed now.
+
+--- Copying Images to SD Card ---
+
+So we have now both the partitions formatted.
+So now to mount them of disconnect your SD card and connect it back and Ubuntu will automatically mount
+them.
+So I've disconnected and I have connected again.
+So you can see it has mounted.
+We have now two partitions which are being mounted.
+So boat is mounted.
+On Sdb1 and root is mounted on Sdb2.
+So we have completed this step.
+So we have formatted our card according to the requirements.
+Now we can flash or copy the images into it.
+So we know the they are mounted here, automatically mounted here, which is less media dollar user
+which is user is.
+Lenox, China.
+So there will be automatically mounted in slash media.
+So you can see this is still running.
+So it's still 13%.
+So it will take a lot of time to generate a beaglebone image.
+So what I did is I actually generated before and have kept the copy of deploy folder folder.
+So now what we have to do, we have to.
+So if this is not automatically mounted, you can manually mount them through this command.
+So we are mounting sdb1, which is a boot partition to boot and root.
+So you have to create this folders before.
+Because these folders will not be existing.
+You have to first create this folder using mkdir and then you have to mount them.
+So we have to copy.
+And and the u-boot kernel image and device tree to the first partition.
+So let's copy that.
+So copy Sudo copy.
+The media trainer.
+Both.
+So we copied.
+First stage boot loader.
+Then you boot.
+Then we copy, Colonel.
+Then we copy.
+The device tree blob so m3 35X bold black tree blob.
+So we are copying all the required in the first partition, so we copied them.
+So we have everything in the.
+First partition, the kernel image, the bootloader, the which is actually the file name is which is
+actually searched by Rom code.
+Then we have the device tree blob.
+Now we have to uncompress the rootfs to the partition.
+So we'll be using tar command because this is a tar file.
+We'll extract the rootfs and we'll copy it into the root partition.
+So we'll not we'll not copy here.
+We'll say Tar Command to copy it to this partition.
+So let's run this command.
+So now it has extracted and it is extracted and it is copied into the root root partition.
+So if you now look into root, you have your root is present here.
+So you have now two partitions, the boot partition and the root partition.
+Boot partition is having the kernel image and all and root partition is having the rootfs.
+So it says sync.
+This will do.
+It will write all the dirty bytes to the SD card.
+Finally.
+Now you can connect.
+You can remove the card from the host machine and you can insert into the SD card slot on the beaglebone.
+
+--- Use gparted to create/format/ partitions ---
+
+So this is one way.
+The other way is you can use a tool.
+This was all command line.
+The other way is you can use a tool called as gparted.
+So this is an easy way.
+Cheap.
+So you start gparted in sudo gparted.
+So I'm showing you one more way of actually creating partitions and then formatting them.
+Previously we used fdisk.
+Then we have this way SDB.
+So we have this pattern.
+So we can do through a GUI interface.
+So you have to first unmount same, same thing like what we did previously.
+Mount.
+And then you delete this partition.
+So this is just another way you can either use this way or that way.
+Depends on which one is easy for you.
+So it's not that you have to use both the ways we are doing the same operation again, you can use any
+one of the operation.
+So first one you have to create partitions new.
+The size is 32 MB and primary partition file system is Fat32.
+The label which you want to give is boot.
+So you can see this file system is Fat32 boot and 32 MB and next is the remaining size.
+It's a primary partition ext4.
+And the name you want to give is root.
+So now you see, just click.
+This will apply all the operations.
+So it is now creating those partitions.
+First, it is deleting the current partitions.
+So it has a list of task is deleting the existing partitions.
+It is creating the partitions now.
+And.
+So it will take time for this to happen.
+So this has completed.
+Now you have.
+Two partitions in one and two.
+So you have to say now.
+So label file system is already put.
+So now you have to assign boot flag to this.
+So manage flags.
+You have to give both.
+And you have to also give.
+So both are needed here.
+So this is important.
+If you don't give, this may not work.
+So you have to give both and you have to give.
+It's.
+So that's all you have to do now.
+So now we can close this.
+Now you can verify this using sudo fdisk slash SDB.
+Zip.
+You can see here, this is the same thing which we got when we did from the command line.
+So we have the same thing now.
+So we have now two partitions.
+One is boot partition and the other is.
+The Linux partition.
+Now you can actually.
+Perform the same step.
+You need to disconnect and connect the device so they will automatically get mounted.
+So is a known command.
+You see it's automatically being monitored now.
+They automatically mounted on this location boat and wrote.
+This should be empty now because we have formatted them.
+We don't have anything.
+Now, let's copy whatever we did here.
+So we copy them pseudo copy.
+So let's run this command one by one.
+So we are copying in first partition.
+Now you can verify them.
+We have all the four.
+And then copy the extract the root into the root partition.
+So now say finally is a sink which will actually write the dirty bytes to the microSD card.
+Finally you need to unmount.
+The partition.
+So now you have your SD card ready and you can connect this SD card to the Beaglebone Black So now I'm
+going to connect this SD card to Beaglebone Black.
+And.
+This is done.
+
+--- Beagle Bone Serial Setup ---
+
+So you need to also connect a serial port.
+For debugging.
+So you have a serial port here, so you connect the TCP pins and ground pins.
+So you need to connect this with a serial cable.
+So I have.
+Have a USB cable.
+You can use any serial cable which has and you can use 210.
+Any any cable for serial communication.
+So which is USB to USB to serial converter.
+Any.
+USB to serial converter can be used.
+So my hardware setup I have an SD card with image flashed.
+I have a beaglebone black.
+I'm connecting my SD card to beaglebone black and I have a power adapter.
+Which can supply firewalls.
+You can also have a micro USB cable, but if you are not using a power adapter.
+The operating frequency will be less.
+I have.
+A USB to serial cable and have connected.
+This way, one for five pins to this cables.
+So you have to connect and and ground.
+For the serial to work.
+So let me do all those.
+Have connected.
+I have connected.
+SD card.
+To the Beaglebone black and have connected a USB to serial cable to beaglebone black, and it is detected
+as USB zero.
+So.
+So that we have to configure minicom.
+So let's configure the minicom.
+So say sudo minicom minus.
+Go to port setup, select whatever device you have.
+I have USB zero, so I have two.
+So I have to say A so depending on which option you want, you can select here.
+So I first need to configure serial device, let's say A, so it's USB zero.
+Then I have to set the baud rate.
+So I have to say E sorry.
+Is done and I know I have to select.
+115200.
+So it's E.
+And.
+So it's 115200891.
+And both hardware flow control and software flow control are no said in settings.
+Set this as default so next time you do not need to configure the minicom again, you can just say minicom
+sudo minicom p now set sudo minicom hyphen s.
+So if you set this as default next time you can just say like this.
+Composers.
+Just say minicom and this will automatically start usb0 and the baud rate will be the 115200.
+So I have configured it.
+Now let's open.
+Let's start over the device.
+I'm going to power the device now.
+
+--- Yocto booting on Beagle Bone Black ---
+
+So you can see it's started the started.
+Or kernel is booted and its config is initializing.
+So it's configuring the packages on the first boot so you can have some packages which can run on the
+first boot and now your yocto is started so you can see it's Beaglebone Yocto.
+It's.
+3.0.2.
+The username is root.
+And you have 5.2. 17 the Linux Yocto 5.01 17.
+So we can see the size.
+So we can see the root is 29.2.
+So the mount command.
+So the root is mounted on slash ext4 partition.
+We can check the size of ram.
+It is 500 mb.
+So three hyphen m.
+So the three hyphen M command is not.
+So this is a minimal image.
+So free command does not have much options here.
+It only runs like whatever you give, it runs free.
+Because it is using BusyBox internally.
+So you can verify info.
+Send Armv7.
+So generic device.
+So it is now you can also verify number of codes.
+It only has one core.
+So we are saying it has floating point.
+And so this all flags are saying about that.
+The one and all.
+So we got our yocto to work.
+We were able to flash for yocto image.
+Let's see the voting order.
+I'm going to say reboot.
+So it's rebooting and have restarted the yocto beaglebone black.
+So now we'll see the booting order.
+So first is rom.
+Then comes the secondary program loader.
+You can see you boot.
+Then comes the U-boot.
+And then your kernel starts.
+So kernel is started now.
+This time you will not be seeing the configuring packages on the first boot because.
+First has already completed.
+So we were saying that U-boot is a very powerful command line.
+It has command line interface.
+So how can I get it?
+So you need to just say enter.
+Well, you started.
+So just say enter.
+And now you have the command line interface.
+Say help.
+You have a lot of commands.
+The all the environment variables can be checked using print, E and V and all.
+And in a boat it will start loading the kernel and the device tree.
+So it's this is how it works.
+So we have seen the booting order.
+Now we have seen the Rom and U-boot and finally the kernel image and the kernel image will initialize
+and mount the rootfs.
+So let's power off.
+Control is Z and X will stop this.
+
+--- Erasing emmc ---
+
+So if you have bought your beaglebone black, you should have some of the you should have your image
+already having some you should have your loaded with some image.
+So what I did is.
+One option is value.
+Your beaglebone black is booting.
+You can press the S2 switch.
+This will make sure it will flash.
+It will start from your micro SD card.
+Otherwise it will boot from the card.
+So this is the default option.
+If you do not press to switch, it will start from.
+The EMC, which we do not want because we have flashed our image on SD card so you can disable it.
+One of the option is you can rename the file in the EMC partition.
+Or the second option is you can erase the EMC.
+So this you can do from the u-boot prompt so you can stop at the U-boot U-boot prompt and you can enter
+the following commands so you can erase the EMC.
+So Beaglebone will not the Rom code will not be able to find the on EMC and it will fetch directly from
+the beaglebone black, not beaglebone black.
+It will fetch from the micro SD card.
+So the switch is.
+This is a switch here on Beaglebone Black S2.
+This you have to press when you power it up.
+If you do not want to erase the If you do not want to erase the emmc, you have to while powering the
+device.
+You need to press this switch and it will start fetching it from the SD card.
+The other option is you can erase the MCU.
+So you put the Rom code will not be able to find and all on and it will go to the next boot order,
+which is micro SD card.
+
+--- Introduction ---
+
+So Yocto project releases, they follow a naming convention.
+The naming convention is major number, minor number and a patch number.
+So example of such is Yocto hyphen major number two, minor number seven and patch number.
+So this is the naming convention followed by for each and every Yocto project releases major dot minor
+dot patch number.
+So when is a major number changed?
+Whenever there is a compatibility changes with the previous releases.
+So whenever there is a compatibility change, the major number will be changed.
+Minor number will be changed when there are significant changes, but there are no compatibility changes.
+So when there are no compatible compatibility changes, but there are significant changes, then they
+change the minor number.
+And then we have finally the patch number, or you can say as minor revision number.
+These are changed for minor issues like simple bug fixes and security updates.
+So only for minor issues, this number will be changed.
+Significant issues, but no compatibility changes.
+The minor release number will be changed.
+Compatibility changes.
+The major number will be changed.
+So this is about Yocto project releases.
+Then we have poky releases.
+Poky releases.
+They also have the same the major minor patch numbering.
+They also follow the same thing, but they also have something additional than a Yocto project release.
+They have some code names, so poky releases has two kind of names.
+One is a major minor and patch numbering.
+Other is a code name.
+And the Yocto Project and poky release.
+Book project are both released at the same time, so both are released at the same time.
+So now let's look into when they are released and what is the frequency of them.
+So let's see.
+This releases.
+So these are the releases from the starting.
+So you started at 2006 and they do not have some naming convention here.
+You can see here.
+And.
+Pokey is also following the same thing.
+This is a pokey version and you can see the code name for this is Inky.
+The next one has slide Blinky pinky, Purple green.
+And.
+From here.
+You can see it started 1.0.
+This is a yocto project version and the poky version is 5.0.
+And you can see now, which we are we are doing is use which is the Yocto project version is 3.03 is
+a major number, minor release number, and there's some minor revision number or patch number is 3.0.2
+and this is the support level, the revision.
+So Yocto will only have major minor and patch number which is this number.
+And Pookie will have two numbers, two names.
+One is a version which is 22.0, and then it is having a code name which is used.
+So these are the various releases till now.
+And in April 2020, they are going to release 3.1, which is Dunnsville and Pookie version will be 23.0.
+
+--- Why Poky has codenames ---
+
+So Yocto project releases.
+The major releases happens every six months in April and October.
+If you have seen that picture, you can easily understand that every release was happening.
+April and October.
+Sometimes it may happen in November, but frequently you can see there happening in April and October.
+So every major release, like the major number is changing, is happening.
+Every April or October.
+You can see it's happening every April or October.
+Whereas minor releases, they do not have any particular schedule.
+They are driven by the accumulation of significant fixes, fixes or enhancements to the associated major
+release.
+So minor release, they do not have any particular schedule.
+It depends on how many enhancements or fixes are there for the major release.
+And once they have such amount of fixes or enhancements, they're going to release these minor releases.
+So why do we have extra codenames for why we have we have already have we are already having the major
+minor numbering, but why we also have a codename.
+So the concept of codename is to make sure the branches of metadata.
+So we call as layers layers with the same codename are compatible with each other.
+So you have layers like you have meta meta yocto, BSP and meta pocky.
+If they are having if they are having the same branch name branch name of branches are there with codename
+like there is a use branch, then there is a various brands and all so branches with the same codename,
+they are compatible with each other so you cannot mix up the branches with a different codename.
+So you cannot have meta layer with a branch reuse and meta yocto bsp with a branch.
+A variant so they are not compatible.
+Branches with the same code name.
+So meta of variable branch.
+Is compatible with meta yocto bsp of barrier branch then only they are compatible.
+Then only will build for build an image.
+Otherwise it will throw various errors.
+So this is the need for code names.
+Branches of metadata, which is layers with the same code name are compatible with each other.
+
+--- Types of Releases ---
+
+Again, we have some other kind of releases we have.
+We have already seen major release and minor release.
+Then we have something known as milestone releases.
+Milestone releases.
+The major release before actually coming into the community is divided into milestone releases.
+So milestone releases are used as checkpoints for the progress.
+Which of the progress of the major release it is.
+It will act like a preview for the public community and to manage changes in the middle of a release.
+So for this we have minor milestone releases and each milestone is like 4 to 8 weeks.
+They have one planning week, several development week, stabilization week and one release week.
+So we can see that here.
+They have a picture for that.
+So this is all about milestones.
+Milestones.
+So we have a six month release of a major release.
+Major releases happens every six months in April and October.
+That's okay.
+So these six months, they have divided into milestones.
+So and each milestone is like nearly 4 to 8 weeks.
+So the first milestone, they have a planning week, then the next first week is a planning week.
+Then they start doing a milestone.
+And then they do that milestone for some weeks like and then the last few weeks will be stabilization
+stabilization week, and then they will release this milestone for public for the preview.
+And if any changes are required, they will add it in the next milestone.
+And the next milestone will also will follow the same process.
+So they will be having a planning planning week.
+Then they will start doing development.
+And finally, last two weeks will be stabilization and finally they will release the milestone for demos.
+This will continue for few weeks or for the whole six months.
+So the whole the major release, they have divided into milestones.
+And after every milestone, they will give you the.
+You release the milestone for a demo?
+People can review the milestone and then they can have if there's any changes needed, they can request
+for the changes.
+Then we have point releases.
+So point is a minor release, so the last number is incremented here.
+So 2.3..
+The last number will be incremented.
+So we have this, as we call them, as point releases.
+So when our point release is necessary.
+So if we are finding some issues building on the Linux distribution.
+So you found some issue that this particular yocto version is not properly building on 18.04, then
+they will do a point release or if it if it is needed to fix critical bugs and security issues, then
+they will be doing a point release.
+So point releases are when the pass number is incremented.
+Incrementing the batch number.
+So this is a very minor release and they will be doing only for this particular addressing this particular
+issue.
+
+--- Release Lifecycle ---
+
+The release life cycle.
+So you have released.
+So what happens?
+What happens to the.
+How much time the support is provided.
+So there are two possible life cycles a release may follow.
+First one is this one you have released.
+Major release has happened.
+You go to stable.
+Then stable part and then community support.
+Stable.
+Community support and end of life or the other is initial release long term support.
+Community support and of life.
+So what is the difference between stable and long term support?
+The stable releases, they are only maintained for seven months so have released in April.
+It will only be maintained for the next seven months, whereas LTS releases they are maintained for
+two years.
+Two years are being.
+So this is a difference.
+LTS are maintained for two years and the stable releases are maintained for seven months.
+And which one are LTS releases?
+They are pre-announced and they are known to be in advance.
+So these are already being known in advance.
+So you can pick up an LTS release.
+So once they have moved to stable you have released it will move to stable or lts.
+After that period, like for stable, we have seven months and after For LTS we have two years.
+After this period it will move to community support.
+So it will move to the community support and a call for the community support maintainer is sent to
+the mailing list so they will send a mail saying anyone is interested in maintaining this particular
+release.
+So they will wait for like six weeks.
+So they have a six week waiting period.
+If they find any maintainer then the support is provided until the maintainer supports it.
+If they do not find any maintainer then that particular release will go into end of life status.
+So this is how it works.
+So branches will only have community support status if there is an active community member willing to
+step into the maintainer role of the series.
+So if anyone is interested to maintain the particular release, then only you will be having a community
+support.
+Else the release will be moved to end of life.
+So this is the release process.
+You are released.
+Either it will be a stable release or a release.
+Then you have a community support.
+And then finally it is an end of life.
+
+--- Layers and Branches ---
+
+Layers and branches.
+So we have different kinds of layers.
+We have distribution layer, we have BSP layer.
+Then we have openembedded layer.
+So layers, they have been developed being developed simultaneously by different parties.
+So for example, raspberry PIs layer is developed by some other brand party.
+So then we have different im6.
+We have one layer which is FSL layer, Freescale layer.
+They have been developed by different parties like NXP.
+So you have each and every layer.
+Again, it will be split into branches, right?
+And the layers all have all the layers.
+The important point here is they will only work with the core of the same branch.
+So BSP layer of zuse will only work with core of Zuse do not work with barrier of core.
+So mixing branches.
+Among your layers will end up in conflicts.
+So you cannot mix branches or you cannot mix layers.
+You cannot have one layer of one particular branch and the other layer of another particular branch.
+So this is because there is something known as Appends and this appends.
+They are tied to a specific version number and that that will break if the.
+Players are different.
+The branches of layers are different.
+So this is the reason we should always have the same branch of each and every layer.
+If you're using Raspberry Pi, it should be the same zuse branch and the core.
+The pokey should also have all the layers of Zuse branch.
+So which branch have to choose now?
+I have a lot of branches.
+I have so many branches.
+I have zoos.
+I have area.
+I have Kroger.
+So which one I have to use.
+So you have to evaluate all the layers.
+So for example, you have Raspberry Pi.
+So you have to see what the Raspberry Pi layer, which layers it supports.
+Then you have to compromise between getting a latest stable branch.
+And getting the latest branch supported by all layers.
+So you have to make sure all the latest branch should be supported by all the layers which you are using.
+Example suppose you have.
+The branch you decided is not supported by your current host Linux distribution.
+For example, you have selected a branch, but this is not tested with the newer distribution like Ubuntu
+16.04 or 18.04.
+So you have to decide you have to compromise between a stable branch and then you also need to make
+sure that this particular layer or branch, this particular branch is actually supported by your current
+Linux distribution.
+So Kroger may not be you have decided on Kroger, but again you have now your host distribution is 18.04
+and Kroger is not supported on 18.04.
+So then you have to change your.
+Post Linux distribution.
+You have to find out which particular host Linux distribution is supporting.
+
+--- What is BSP Layer ---
+
+So let's look into one layer with.
+So before going to meta, we have to understand what is a BSP layer.
+So what is a layer?
+So Bsplayer is a collection of information.
+Or you can say metadata.
+The defines how to support a particular hardware device.
+Set of devices.
+A hardware platform, so.
+It is a set of information which actually provides supporting a particular hardware device.
+That information can be which bootloader to choose, which device tree to choose.
+Which kernel version to use, which kernel configuration to apply.
+So all this information will define what patches to apply on the kernel.
+So all this is information which actually supports.
+Building a Linux image embedded Linux image for a particular hardware device.
+
+--- BSP Layer Naming Convention ---
+
+And this player, they follow a naming convention.
+It starts the name of the folder or layer.
+It starts with meta hyphen and the name of BSP.
+So now you have meta Raspberry Pi Meta hyphen.
+Raspberry Pi.
+Meta hyphen.
+Hyphen.
+Hyphen pi.
+So the naming convention of BSP layer is meta hyphen bsp name.
+How?
+How can I find out what all hardware devices are supported by this particular layer or layer?
+So you can list all the hardware devices supported by BSP layer.
+So you have in the BSP layer, you have a folder inside this, you have a machine folder and what all
+devices are being supported, they have conf so they have, they have file extension as conf so for
+example.
+If you go into source code Pookie, you already have one layer which is meta yocto BSP.
+So yocto provided BSP, so you can go to meta yocto bsp.
+You have corn folder, you have machine folder.
+And here you can see here, these are the various hardware platforms supported by this particular BSP
+layer.
+Beaglebone Yocto You have supported edge router generic x86 64 generic x86.
+So this is 32 bit Intel machines, 64 bit Intel machines and this is another device.
+So to find out what all hardware machines or platforms are supported in a particular layer, you can
+always look into conf machine.
+
+--- meta-ti Layer ---
+
+So now we have to see what meta meta is a BSP layer.
+So meta.
+It is a BSP layer for Texas instrument hardware.
+So this is a Texas instrument hardware Beaglebone Black is a Texas instrument hardware.
+So the hardware configuration or the hardware platforms supported by Meta are Beaglebone, Black Beagleboard
+Pandaboard, Omap board.
+So a lot of devices are being supported by this particular BSP layer, which is meta.
+So what we will do is let's actually clone it.
+Let's actually get the source code, download the source code of meta.
+So go to your sources folder.
+Do not do inside Porgy because Porgy is itself a different repository, so do it here.
+So we are downloading the meta.
+We are cloning the meta repository.
+Now we have cloned it.
+Now we have two folders here.
+One is a pokey folder and the other is a meta folder.
+Go to Meta.
+We'll be having a Readme file.
+So it says that this is the official openembedded yocto BSP layer for Texas instrument platforms.
+So this is the location where it is hosted.
+And this it says that this layer depends on.
+Open embedded code.
+So this layer, it depends on open embedded code.
+Open embedded code.
+We already already know what is open embedded code.
+It is meta.
+Meta cookie has a layer meta which is open embedded code.
+So this means it depends on the meta layer.
+So you can see here it says less is better.
+So it depends on the meta layer and.
+It says it depends on different yocto distributions, like it depends on distroless only core.
+You can have only core or you can have with poky or you can have with different angstroms.
+So it does not depend on a poky it.
+It can generate an image without.
+Cookie.
+So you can only have a core, which you can only have a meta layer and you can only have a meta layer
+and you can still generate an image or you can generate an image with key distribution, or you can
+generate an image with Angstrom or Arago distribution.
+So the important point you always have to see is what all layers this particular layer supports.
+So this layer only depends on meta layer, which core.
+So we already have that layer.
+And we can go here on machine.
+You can see here we have support for many devices.
+Beaglebone conf.
+This is a beaglebone black.
+So.
+Machine configuration for Beagleboard.
+Then you have Beagle.
+Board golf.
+So machine configuration for beagleboard.
+You can see here the name is here.
+Then we have pandaboard.
+So we have a lot of boards here.
+So machine configuration from the Pandaboard.
+And you can see he simply has the serial port settings.
+It has which device it would use.
+And some other information which is present in the include file.
+So this is the layer for Texas Instruments.
+And now we have to make sure we are all in the same branch.
+So here we have.
+Master branch.
+So let's not use Master Branch.
+Let's use use.
+So we'll say, no, we are in a we are using the use branch.
+We are not using Master Branch in this case.
+What you have to do, you also need to make sure your.
+Using the same branch here.
+So here also we are having same branch.
+If you are using a master branch, you need to check it out to use branch.
+So this is important.
+Otherwise the build may fail.
+You have to make sure all the layers are having the same code name.
+So this is the reason we have code name so we can have all the layers having the same branches.
+Code names are used for branches so meta and key they should all have the same.
+Branch.
+Now we have the same branch we have, we have downloaded the layer and we are having the same branch.
+
+--- meta-ti vs meta-yocto-bsp ---
+
+[No transcript available for this lecture]
+
+--- Add meta-ti to yocto build ---
+
+So now we have to add this layer.
+So by default, when you say.
+Source.
+Will come out and you say source.
+Pokey init build.
+Beaglebone.
+The players.
+Uh.
+Which layers are included?
+Yes.
+The command for that is with back layers.
+So layers.
+Only by default.
+The three layers are included.
+Meta core, which is the distribution layer, meta key and meta yocto, which is the BSP layer.
+So by default, when you do a source on the init script, this is the layers and this is actually reading
+conf layers dot conf file.
+This file is being read and it is being displayed here.
+Now we want to add our own layer.
+We want to add.
+Method to the build.
+So how can I add?
+One option is manual approach when I open the BlizzCon file.
+And I manually add the so says here.
+My data is present in source folder, so I have added metadata here.
+Now say bitbake layers.
+Surely.
+Now, you can see here metadata is being added.
+So why the layer is being added now?
+Because we have updated the layers.
+Field.
+So this is this is one approach of adding a new layer.
+So let's remove this.
+And now, see, we make layers.
+So layers.
+Now we have only the default layers.
+The other approach is.
+Bitbake layers.
+Add layer and you have to give the path of the new layer.
+So let's give that.
+So let's first say bitbake layers.
+Add layer.
+It's add layer, it's not add layers, it's add layer.
+Let's say help.
+So it's saying you have to give the layer.
+You can add multiple layers in a single command.
+So it says layer directory or directories to add.
+So bitbake layers.
+Add layer.
+Then give the path full path.
+Say your training source Meta.
+And now let's verify with bake layers.
+Show layers.
+I know you have the metal being added.
+In the layers and you can also verify it from layers.
+So this is also being updated.
+I know we have this.
+So there are two ways which we have seen.
+One way is manually adding it to the layers variable and the other way is using Bitbake layers command
+with bake layers add layer and this particular thing.
+You can add this.
+
+--- Build Yocto Image using meta-ti ---
+
+Now we have to build an image for Beaglebone black.
+So how can I build an image for Beaglebone black?
+We have already initialized the environment script.
+And then we have to add it.
+We have already added the layer.
+So this is pre previous.
+We have added the layer.
+So.
+You need to add a layer after this.
+So I'll just add it.
+Add the layer meta layer.
+For this.
+Can copy this here.
+Add the middle layer.
+We have done the first step now.
+And the second step, we have to set the machine.
+Previously we used to have the machine name as this one.
+So if you go here, source key.
+The machine name is Beaglebone.
+Hyphen Yocto.
+For Beaglebone black.
+But here in the meta I.
+The machine name is a different name.
+So conf machine.
+So you have to give the name.
+Beaglebone because the name of the machine is different.
+Here it is.
+Beaglebone conf so the name of machine field will be Beaglebone.
+But here the name of machine is Beaglebone hyphen Yocto.
+Conf so you will have to say set machine equals to beaglebone hyphen Yocto.
+So open here.
+So previously we have set the machine to this.
+Well, actually, let's go back.
+And set the machine to beaglebone.
+You can verify the value of machine by using the hyphen option of bitbake.
+So bitbake hyphen e core image.
+Minimal.
+We can grep for the machine.
+Machine is in capitals and you can find out what is the value of machine.
+So we have set the machine to beaglebone.
+Then when we say machine equals to Beaglebone, it will actually read this file.
+Beaglebone.
+So it will take some time.
+So you also need to add.
+It's whether you add inherit less equals to work.
+So this will save your disk space.
+So adding this will reduce the temp folder.
+It will delete all the temporary files and it will.
+And it will do a cleanup of temporary files as well as the source code.
+Then the disk space is saved.
+Finally, you generate an image, you can generate a minimal image or you can generate a different images.
+You can also find out what all images are provided by this layer.
+So to find out what all images are supported by this layer, you can say recipes.
+You can because images are present in the folder inside folder of recipes.
+So sub folder of recipes you have images folder.
+So there is no such images folder here.
+So no, no such folder or image.
+So this particular layer, it does not provide any particular images, does not have any image recipes.
+So this layer is not having any.
+Recipe and recipe.
+So you have the default recipes which are present in the pokey.
+So pokey, we have different layers.
+So these are the various images which you can actually use.
+So we have a startup.
+So the various this all images you can try out if you have time, you can try out all the images.
+Okay.
+Webmachine.
+Minimal.
+Research for a minimum.
+So we have machine here beaglebone.
+So we have not said equals to.
+We have said question equals two.
+This is the reason we do not get machine equals two.
+So we'll be looking into what is the difference between question equals two and what is difference between
+simple equals two?
+So you have this big set into the machine failed.
+Now we have set it.
+Let's also add this option inherit work.
+And now you can generate an image.
+Minimal image with core image.
+Minimal.
+So this is wrong.
+So we can start parsing all the recipes.
+It will also now include meta layer and then it will start generating an.
+Building the packages.
+And generating the embedded Linux image.
+So once the build is finished.
+We'll be able to find the images in temp deploy images.
+Beaglebone will not be having beaglebone yocto because the name of the machine is.
+Beaglebone.
+So we can see here it already is giving us is giving us the big version.
+The system which we are building is 64 bit.
+And the host machine is Ubuntu 18.04.
+What is the target system?
+This is the target system.
+What is a machine which we are building for a machine which we are building for is a beaglebone.
+What is a distro which we are building?
+The distro version.
+And then it lists all the layers.
+With which we have included.
+And it also includes the branches.
+See also on.
+So we are using the branch for meta and meta BSP.
+So it is displaying the.
+So it will take some lot of amount of time.
+It will take nearly 1 or 2 hours for the build to complete.
+So let's not wait have already generated an image I have already copied, generated an image, and I
+have it in.
+My temp folder I have already generated.
+Image.
+So these are the images.
+So you will be having a folder on as beaglebone.
+Again, you have here your the first stage bootloader.
+Then you have your boot.
+SPL is a secondary program loader and you have your boot image.
+Then you have Z image, then you have root.
+So how did we flash it in the last ten?
+How did we flash the image?
+So we actually have used.
+We manually created partitions.
+We created two partitions on the machine, on the SD card using fdisk and using Gparted.
+And then we manually copied a u-boot kernel device tree and the root.
+So we copied Rootfs into a separate partition and we copied the remaining into a boot partition which
+is fat.
+32.
+
+--- Flash Yocto Image using wic utility ---
+
+So there's another way of doing that.
+So there is something known as wick images.
+So wick images are images which can be directly written into the SD card.
+So we have something known as Wick images.
+So here you already have some this file you can see here.
+You have a weak image.
+Core image.
+Minimal hyphen Beaglebone dot dot x set.
+So dot exit it is a compressed image.
+So first you need to come and compress this.
+How can we do this?
+So you can use an x z which will compress this particular image.
+So let's use an unexcelled and say core image minimal with x.
+So we are now getting a big image from the compressed form.
+So it's a symbolic form.
+It's saying so.
+Let's give it this one.
+So it is actually pointing to this particular link.
+It a symbolic link.
+You have a timestamp here?
+So next.
+So now it has compressed it.
+I know you should have.
+Evict file generated.
+So you have a file here?
+So you can say with less.
+And you can see here there's a command which we'll be looking in our upcoming sessions.
+So which will give us what all partitions are being.
+Created When you write this image onto the on the SD card, it will create two partitions fat 16 partition
+of this size and four partition of this size.
+So it is already giving that information.
+So we'll be looking into this particular command, WIC, in our upcoming sessions.
+So let's actually connect our SD card and flash this on the SD card.
+So I have connected my SD card.
+I can verify that by using LSB command.
+The block LSB will give me.
+All block devices are connected, so I have SDB here.
+It's already having two partitions so I can erase them.
+I can just say I want.
+To have any partitions now.
+So let's what we do is let's actually remove them.
+It's not necessary.
+But just want to show you that the images are working.
+So mount.
+And let's delete him.
+Delete it.
+So we are deleting the both the partitions now.
+It does not have any partitions?
+No.
+So we can verify that LSB now does not have any partitions.
+Only has know.
+So now we can directly write.
+This step is not needed.
+But I just want to show you that it actually creates you two partitions.
+So now the command is.
+Soda degree.
+Input file is this file.
+Output file is dev SDB.
+You can say status equals to progress.
+Block size is four, seven, 96, and then you have a sink which will actually write the dirty bytes
+back to the SD card.
+So it has done it super fast.
+So let's verify that.
+So now you can see here it has created two partitions.
+As Db1 and as DB2.
+Previously when we have deleted, there were no partitions.
+When we have done a command, this image, when we have written on SDB, it has created two partitions.
+Let's actually now.
+Uh, remove and connect back.
+Disconnect and connect again.
+So.
+So you can see here.
+It has created two partitions.
+Both.
+And fruit.
+So it has also mounted them.
+So you have and you put image.
+And you have.
+Again, here you have a boot folder where you have the kernel image as well as the device trees.
+So it has not copied the kernel image into.
+The boat folder.
+It has copied it into the second partition.
+It has not copied in the first partition.
+It has copied in the second partition.
+And then you have the road here.
+So you can also verify the partitions using disk.
+So you have two partitions created.
+One partition is of 20MB.
+Second, it only created for 25MB because the rootfs is very small.
+And you can see the first is fat 32, Second is the fourth.
+Now connect this card to the.
+Beaglebone black.
+And then you can check it out.
+So let me connect this to the SD card.
+SD card to Beaglebone black.
+And let's see the output.
+Give me a time.
+Some time.
+I'm going to power the device now.
+You can see now booting the kernel is booting now
+and you can see logs are different when we have.
+Locks are different when we have metadata and when we have meta.
+I can see different kinds of locks are coming saying open dev, misc rtc no such file.
+Username is root.
+And you can verify the kernel.
+It is.
+5.4.20.
+The kernel is 5.4.20 and we have a different kernel version when we actually booted through when we
+have generated an image using yocto BSP.
+So you have the same processor.
+And you can see the route is only.
+24.
+24.5.
+And.
+Nine MP is only used for the route, so very minimal route.
+Core image Minimal.
+It actually generates a very minimal route.
+And you can see here it is 5.4.20.
+Only one processor.
+So it has 500 MB of space ram.
+MB of Ram.
+So this is all of beaglebone layer.
+So you can also verify the layer difference if you go into meta.
+If you go to recipes.
+U-boot which we'll be doing later.
+You boot, you go.
+There you go and see.
+So that you are a repository which this is fetching.
+Is this one.
+U-boot dot git.
+So this is the URL.
+So it's not the mainline u-boot.
+It's a u-boot of the company.
+So it's Texas Instruments U-boot Repository.
+It's not the repository of the mainline U-boot.
+Also, you can see here which this all will be covering in deep in our upcoming sessions.
+The Linux also is the same.
+This here you can see the kernel gate.
+It's not the mainline kernel, it's the kernel repository of the Texas Instruments.
+So that's the reason you get a different kernel version.
+When you have used meta, when you have used meta, you got a different kernel version.
+When you have used the meta, you got a different kernel version.
+So this is the reason because they are not using the mainline kernel, they are using the staging kernel
+of Texas instruments.
+And thus you have advanced features which are not present in the.
+Whether or.
+For the mainland, Colonel.
+
+--- Challenge ---
+
+Generate.
+An image.
+The Beaglebone black.
+Beaglebone using meta.
+But remove.
+The meta octo player.
+It's.
+So the challenge here is you you need to remove the meta octo BSP and you need to generate an image
+for meta.
+So previously we were using we have all the layers for layers.
+So control z X.
+So here, if you see.
+It is a bit make layers.
+So let's.
+You have all the four layers.
+Now you have to generate an image.
+Removing weight is very simple challenge.
+I think you can easily do that.
+
+--- Raspberry Pi3 Specification ---
+
+[No transcript available for this lecture]
+
+--- meta-raspberrypi ---
+
+So now we have to our aim is to generate an image for Raspberry Pi.
+So the pokey layer does not have support for Raspberry Pi.
+So the pokey layer does not have BSP or board support package for Raspberry Pi.
+So there is a separate layer which is meta Raspberry Pi, which actually provides hardware specific
+BSP overlay for the Raspberry Pi device.
+So like we have meta, we have meta Raspberry Pi and so.
+Now this part, this matter, Raspberry Pi, can work with different yocto distributions and you can
+generate a distro distroless image or you can have distroless image you can have you can use a distro
+of angstrom.
+So these are the various distros it supports and we'll be looking into.
+That we'll be using the pokey distro.
+This particular layer, The hardware it supports are this.
+It supports all the Raspberry Pi hardware.
+So starting from Raspberry Pi to Raspberry Pi four, as well as the Raspberry Pi zero, it also includes
+raspberry zero Wireless, so it supports all the Raspberry Pi devices.
+This particular layer to Raspberry Pi.
+So the link to download source code is this.
+So first let's.
+First, let's download Raspberry Pi.
+So let's search for Raspberry Pi.
+Link.
+So go to layers dot openembedded.
+Org.
+Going machines.
+And you say I need machine support for Raspberry Pi three.
+And then it says we this spring present in.
+I made a raspberry pie.
+So this is the layer.
+So source link.
+So let's.
+Clone this repository here.
+Go to your source folder.
+So we already have Pokey and I.
+So now we have to clone the meta Raspberry Pi.
+So now we have a Raspberry Pi here.
+Let's go to the Raspberry Pi.
+Each and every layer, they will have a Readme file.
+So you go to and open that Readme file.
+So it says Yocto layer for the Raspberry Pi boards.
+And this is what we have seen.
+And it says.
+This layer depends on.
+So it depends on the key.
+It also depends on one more layer.
+So this layer is depending on both two layers.
+So it depends on this layer and also depends on something known as meta openembedded layers.
+So meta Openembedded is a project.
+It's a repository, big repository which has multiple layers in that layers.
+It depends on meta, meta, multi media, meta networking and meta python.
+So first you have to clone this layer.
+It's not a, it's not a layer, it's a repository.
+So clone this thing.
+So I'm going to clone this again source folder.
+So we are going to clone the meta openembedded project.
+So in this project we have a lot of layers.
+So.
+So it's nearly 35.
+So you can see in the Meta OpenID project you have a lot of layers like meta file systems, meta genome,
+meta initramfs meta multimedia, meta meta networking and all.
+So you can see the Readme file.
+So collections of layers for the core universe.
+This repository is a collection of layers to supplement core with additional packages.
+So this is what it is saying.
+You know what is core?
+The meta folder in the Pooky directory?
+It is in core.
+So this repository, it is a collection of layers.
+We have seen there are a lot of layers to supplement core with additional packages.
+So and our meta Raspberry Pi, it depends on this particular layers, meta meta, multi media, meta
+networking and meta python.
+So it depends on these layers.
+With better networking with our python and.
+Better multimedia.
+So this.
+So these are the layers it depends on.
+So we have downloaded the required layers.
+Now let's proceed to the next step.
+
+--- Add Layers to build ---
+
+So Pookie.
+But we have discussed it has no support for Broadcom, BSP, SOC.
+So it has.
+We have to download the BSP layer for Raspberry Pi.
+This is what we have done.
+We have downloaded the BSP layer for Raspberry Pi.
+Then we have to download Meta open embedded branch as well as Raspberry Pi layer depends on it.
+So as the meta Raspberry Pi has dependency on this layer, we have to download this particular layer
+we have downloaded.
+So once you complete cloning this should be three folders Pokey Meta Openembedded and meta Raspberry
+Pi.
+So.
+So you have this three meter.
+This is our previous layer, so let's ignore this for now.
+So now you have cookie, you have raspberry pie and you have meta openembedded.
+These are the three layers, three folders which should be present.
+And now do a source.
+So and the source in to set up the environment source.
+Come out.
+I think first we come out of this say source.
+Source.
+Okay.
+In a build build Raspberry Pi.
+So now let's verify what all layers we have with basic layers.
+Show layers.
+So we have only these layers, these three layers.
+Now we have to add meta Raspberry Pi.
+We have to add our layers.
+So we have to add the layers.
+So let's add the layers.
+So let's first add.
+With bass players.
+We know the command with break layers.
+Add layer.
+And we'll say we are going to add Meta Raspberry Pi.
+The ancestral years.
+So the Raspberry Pi is being added.
+So even if I have provided a relative path, you have not provided an absolute path.
+I have provided a relative path.
+Still have taken the absolute path.
+So that's good for us.
+Now we have to add the dependencies to.
+Let's verify this.
+Now is added.
+Then Add.
+But a python.
+Python is added.
+Multimedia.
+Better multimedia is added.
+Finally, one more layer which is present is.
+Meta networking.
+So let's once again go.
+Okay, we'll verify.
+We have now all the layers.
+So we have added all the layers we have added to Raspberry Pi.
+This is the layer for Raspberry Pi board.
+And then we have added the dependencies which is required for Raspberry Pi to work.
+So we can verify what all boats are supported by Raspberry Pi conf machine.
+So you can see a lot of boats are being supported, Raspberry Pi zero, which do not have WiFi and Raspberry
+Pi zero WiFi, which has Wi-Fi support, Raspberry Pi two and Raspberry Pi 364 and normal Raspberry
+Pi three.
+If you need a 32 bit image, you can use Raspberry Pi three.
+If you need a 64 bit image, you can use Raspberry Pi three hyphen 64 as machine.
+Same case is with Raspberry Pi 64.
+Then we have normal raspberry pi and this is the module compute module.
+So these are the various configurations or machines or hardware devices this particular layer supports.
+So we have seen that.
+Now.
+The next step is we have to set the machine.
+So go to your local conf.
+Say machine equals to Raspberry Pi three.
+So we have set the machine now as Raspberry Pi three and we can also set.
+Inherit.
+Less equals to Aronberg.
+So this can also be to reduce the disk space.
+I'm setting the.
+So let's verify what our images are being supported by this particular layer.
+We know images are being present in this images folder.
+So recipes, star images.
+So this particular layer, it provides the three kind of images, basic image, hardware, app image
+and a test image.
+So let's see what all those images means.
+What are the images means?
+
+--- Build Yocto Image for Raspberry Pi3 ---
+
+So however up image me is an image based on core image minimal.
+And the basic image is it's an image based on.
+So it's based on this, but it has some more features, like a splash screen.
+So this image does not have a splash screen.
+So if you connect to display, it does not show you a splash screen.
+But this has support for splash screen.
+Then we have test image.
+So it includes some more packages which are present in the Raspberry Pi layer.
+So these are the three images which are supported.
+Hardware image is the same like core image, minimal basic image is core image minimal or this image
+are sharp image plus splash screen.
+Then we have test images test image, which actually includes some of the features in my Raspberry Pi.
+One more thing you need to do is Raspberry Pi three does not have the Uart enabled by default.
+This is done because the code fixed the Uart.
+It needs a fixed core frequency.
+And if you are going to enable the Uart, the core frequency is set to the minimum.
+So but we need Uart because we are going to see the console and all we are going to connect to the Raspberry
+Pi.
+So to enable the Uart, you have to set the following in local code.
+So let's enable the Uart.
+So we will be writing this in the local conf.
+So to enable the Uart, we are doing this.
+Now let's actually generate a basic image, which is hardware RGB, image of Raspberry Pi.
+One more thing we need to do here is we have forgot to actually.
+So this is actually present in the master branch.
+That is present in the master branch and.
+This is seen as used branch, which is not correct.
+We should have every layer to be present in the same branch.
+So let's check out the use.
+As well as in the Raspberry Pi.
+We have to make sure everyone uses the same branch.
+So we are every now every of these are using the same branch.
+Now, let's do a bit.
+So that's the reason previously you got an error saying because they were of the different branch.
+We have a Raspberry Pi using master branch meta Openembedded using master branch and he was using his
+use branch.
+So when we have switched everyone to the same branch, now it is working.
+Otherwise you may get errors.
+Something like this.
+So this is the reason we have code names for branches, bookie releases.
+We have code names, so we can have those code names as branch names.
+So now it is going to pass the passes, all the recipes.
+So and then it will actually generate a image.
+So let it complete that.
+So let it do that.
+
+--- Booting Process in Raspberry Pi3 - First Stage ---
+
+So let's understand the building process in Raspberry Pi.
+We have already understood the booting process in Beaglebone Black.
+We know we have MLO, we have the on board on chip rom, then we have MLO.
+Then we have U-boot and then we have U-boot.
+And then we have kernel.
+So is the same on Raspberry Pi.
+So let's verify that.
+So on Raspberry Pi we have CPU on the SOC, we have a CPU and GPU and sdram.
+CPU is 64 bit.
+This.
+The four core.
+Arm cortex a3 a15 a53.
+Then we have a GPU which is videocore four.
+Then we have a sdram which is 1024 MB.
+So when you power on the device, so when you have power, the device GPU will become on CPU will be
+off and sdram is off.
+So CPU is off.
+When you power on the device, this GPU is on and sdram is off.
+So when the pie is powered up, the first thing that starts working is the GPU core and the arm CPU
+is held in reset.
+GPU core is a main part responsible for the first routing steps of the Pi.
+So.
+And inside Broadcom's SOC there is a small boot rom, so it's like beaglebone black.
+We have an on chip ram rom.
+It's programmed by default to look for a file called boot code bin on the SD card.
+So this on chip rom like the beaglebone black.
+We have an on chip rom.
+It is programmed to look for the first secondary program loader.
+The same thing on Raspberry Pi is programmed by default to look for a file called as boot code dot bin
+on the SD card.
+So this Rom has a capability to read the SD card.
+It has a capability to mount the SD card.
+So this particular Rom on the present on the SOC, it will look for a file called as boot code bin and
+this will load the boot code dot bin into the catchy memory so it will load into the layer to cache
+memory.
+So this is the first stage of booting in this first stage CPU is of sdram is off, only the GPU is on
+and the on chip rom.
+What it does is it will look for a file called as boot code bin on the SD card and will load it into
+the cache memory.
+
+--- Booting Process in Raspberry Pi3 - Second and Third Stage ---
+
+Know this.
+What does this woodcote dot bin does?
+So when this woodcote bin it is executed on the GPU, it's not executed on the CPU because CPU is of
+the initial stage.
+What this does is it enables the sdram and it will load the third stage bootloader which is start dot
+elf into sdram.
+So boot dot bin can read files like elf and Will before loading this, it will first enable the sdram
+and it will load it.
+The file known as stat elf which is present on the SD card into sdram.
+So now you have.
+After the stage two you have on, you have stayed on, but you still have off.
+So the boot bin enables sdram.
+It will load the third stage boot loader into Sdram.
+And what does the start?
+What does so start?
+It is a full fledged proprietary operating system for GPU.
+So it's an OS for the GPU known as Videocore OS.
+We know the GPU name is Videocore four and the OS is Videocore OS.
+The name of the OS is Videocore OS and the file name is Start Dot Elf.
+And this start elf.
+It actually starts by reading config dot txt file, so there should be a file known as config dot txt
+which contains configuration parameters for the GPU like memory frame buffers etcetera for the linux
+kernel.
+And the name of the colonel.
+So the name of the colonel, it says to the colonel.
+Image.
+Finally it loads.
+It also looks for a file known as command line dot txt.
+And if this file is present, the contents will be passed as the kernel command line and at the last
+stage it enables the CPU.
+It will also it will load the kernel image which will be executed on the CPU and is also being loaded.
+So this is all the three stages.
+So each, each and every stage one particular option is being turned on.
+So first they were on when Rom became on and then finally our CPU is on, which is actually executing
+the kernel image which will start the kernel image.
+So this is how it works.
+So let's so.
+Let's actually now.
+So this is what the booting in Raspberry Pi.
+We have the GPU core.
+Which is started when you power on the device.
+The first stage bootloader is on chip from Rom on the SOC.
+It will load the boot code dot bin file on the L2 cache and this file will enable the sdram.
+It will load start in the sdram.
+This particular is a OS for an OS for the GPU and this will look for files like config dot txt and command
+line dot txt for configuration and passing command line to the kernel.
+It will enable the it will load the kernel into sdram.
+It will enable the CPU and the CPU now takes control.
+So this is the booting process in Raspberry Pi.
+
+--- Flashing Yocto Image on Raspberry Pi3 ---
+
+So now let's actually flash the image.
+Have already generated the image, so it is already present with me.
+So image is present.
+So this is a temp folder.
+So images will be present in deploy images.
+The name of your machine, which is Raspberry Pi three.
+So I have a lot of files here.
+So this now contains a lot of files on nearly 122 file which should also contain some.
+Let's see whether it contains any txt files.
+So it has con config dot txt and command line dot txt.
+Let's go into this files.
+So you can see here these are the files.
+You can see here it has boot code bin, it has command line dot txt.
+This is the option.
+This is the command line which is being passed to the kernel.
+This is being appended there.
+Then we have config dot txt which is the configuration for the GPU.
+So you can modify anything which is needed.
+So mainly this is the configuration which is for GPU like frame buffers modes etcetera.
+And you have here boot code bin, you have start Elf and some other files.
+So.
+This is the image which is present.
+So you can see this is the image which is actually SD card image.
+So it directly generates you an SD card image, so which we can directly write into the SD card.
+So.
+Images are present in here, so you can directly write this particular image into the SD card.
+So let's actually write this image into SD card.
+So I'm going to connect my card reader.
+Could connect your SD micro SD card into a card reader.
+So let's verify.
+So I've already generated once, so.
+Block.
+So let's actually delete everything from the.
+Card.
+So we have no partitions will be not will we will verify whether it is working, the command works or
+not.
+So let's delete every partition in this.
+I'm going to delete unmount.
+This is an optional step.
+It's not needed.
+I'm just showing you that when you do a deed, it actually creates an.
+Partitions.
+So have deleted all the partitions which are present on the SD card.
+So we can verify that using LSB command.
+Now, SDB is not having any partitions.
+Now let's write the image pseudo disk input file is this.
+Output file is our dev SDB.
+Block size is 4096.
+Let's say status equals to progress.
+And for sync is for writing the dirty bytes to the SD card.
+So now when you add status equals to progress, it will also show you the status.
+So it is like nearly 13 one 3134 MB of image.
+Now let's verify.
+Let's block.
+Now you can see there's two partitions being created.
+What I'm doing going to do is I'm going to remove the card reader and connect again.
+So now you can see there are two are being mounted.
+So we have two partitions.
+We can verify the partition table again if disk to disk.
+So again, it's like same as raspberry Beaglebone black.
+We have two partitions.
+One is the fact partition, other is the Linux partition, which is ext partition.
+So one should be a fat which contains the boot files.
+So let's actually go into that file partition.
+So you have here.
+Here.
+You have the disease, then you have co-twin, which is being looked by the on chip rom.
+Then you have start which bukopin uses and then you have channel seven point AMG.
+So let's open the config dot txt and check for kernel.
+So you can see you can give any name for Colonel here.
+So by default it now is using Colonel seven dot IMG.
+It's not Colonel dot IMG.
+So this is mistake here.
+It should be, Colonel.
+.7..
+I can manually modify and keep, say, kernels.
+I can say it, Colonel, but it's now Colonel Servant, which is what is being loaded.
+So I'm going to modify this.
+And the command line is present here.
+This is the command line which will be added to the command line.
+So if you want to add any command line, you can open this file and then you can add the command line,
+whatever you want to add.
+So this is the first partition and then we have the second partition.
+Which is our route.
+This is a root which is present here.
+
+--- Serial Setup ---
+
+So let's next step is.
+So we have flash the SD card.
+Next, we have to connect this card.
+We're going to connect my SD card to the Raspberry Pi.
+I have an SD card with image flashed.
+I'm going to connect the SD card for Raspberry Pi.
+And I need the hardware.
+So now I need a hardware, which is Raspberry Pi.
+So I need a power supply for Raspberry Pi, which can supply five volts.
+I need a USB two for serial communication.
+And how is this connected?
+This is how it is connected on the Raspberry Pi.
+We have a 40 pin header, which is the sixth pin should be connected to the ground of your USB to TTL,
+so it's USB to serial converter which you have.
+You should connect ground, receive pins of your USB to serial should be connected on the eighth pin
+and transmit pin of USB two should be connected to this pin.
+So this is how your hardware setup should be there.
+You should have an SD card connected to Raspberry Pi, which you need a USB to serial communication.
+You need a power supply adapter.
+So I'm going to connect my USB to Serial.
+To my board.
+To my laptop.
+So have.
+To be zero.
+So the problem, I think, is we need to we have we have not successfully written the.
+SD card.
+So let's once flash it again so we do not have any problems again.
+So because you can see there are some message logs.
+So what we'll do is we'll do a flashing again.
+So we do not have any problems when we start our image.
+I'm going to flash the SD card again.
+You have to safely remove the SD card.
+So we have.
+I'm going to flash the image again.
+We want to say Think again.
+Let's manually remove sdhb.
+It's not wanted.
+So let's see the message.
+So now I'm going to remove it.
+So I still have those errors.
+Let's try now.
+I've connected my USB to serial
+USB zero.
+So I have to configure my minicom.
+Sailboat set up usb0.
+The baud rate is 115200.
+Perfect.
+Say save setup as default.
+Thanks.
+
+--- Booting Yocto Image on Raspberry Pi3 ---
+
+No power on the device.
+So I'm going to power on the device now.
+So you can see now we have a Linux image, a Linux image.
+Yocto image started.
+And start it now.
+So you can also connect a LAN cable.
+If you have a router, you can also connect a LAN cable.
+So we have your image loaded successfully.
+You can verify.
+The kernel version is 4.9, 19.93, 4.19, not 4.9, 4.19.
+And it's armv7.
+You can see how many processes we have.
+We have quad core core processor.
+We can verify the memory we have.
+It's one gigabyte of memory we have.
+You can also verify.
+The command line.
+So this is the same command line which is being passed, should be present there.
+Now, you can see I can also connect the Ethernet, so I can also connect the Ethernet cable.
+So I'm going to connect the Ethernet cable.
+So this will verify whether we are getting an Ethernet address or not.
+So we got an Ethernet address.
+Now we got 192 168 zero 100.
+This is the Ethernet address.
+Can I do an SSH?
+Can I remotely connect to this device?
+So let's try that.
+Assets by 192 168 0.100.
+So it's still saying connection refused because it does not have the package which should be running.
+So this is a package which is dropbear which should be running.
+For you to do an SSH on the device.
+So this is not running.
+So it's just displaying what we have grabbed.
+
+--- Yocto Image with ssh support ---
+
+So we need that package.
+So we need that package and that is not present in the image.
+Which we are doing.
+So we need Raspberry Pi package so we know we have used.
+They have used a basic hardware of image and does not have anything.
+It is just including the core image, minimal, and it's also including the modules in the root.
+So it is not doing anything.
+So we need a package which is dropbear, which is present in this image.
+Basic image.
+So this particular image, basic image it has.
+The dropbear ssh server so we can remotely connect the.
+Raspberry Pi.
+We can do not have a USB cable.
+I want to remotely connect.
+I can use a drop beer server.
+So this is present in the image.
+Basic image.
+So what you have to do, you have to say then instead of hardware image, you have to say basic image.
+If you say that basic image to do a basic image generation.
+To stop this.
+I should have.
+API basic image.
+Okay, the test.
+So I have a basic image which is already being generated.
+What I will do is I will actually flash my Raspberry Pi again with this image and we'll verify it.
+We'll look into that.
+So I'm now going to flash the SD card.
+I'm going with this image.
+So now to flash it again when the command.
+Instead of hardware up image, we have basic image.
+So you can see the size is different here.
+Previously it was 130.
+It was 134.
+Now it is 138.
+Mm.
+So think again.
+You can now.
+The more it.
+Connect again to the Raspberry Pi now.
+So I'm going to connect to Raspberry Pi again.
+This time I have loaded a different image on the Raspberry Pi system.
+I have loaded a basic image, so looks like it's not being properly copied.
+The image is not being properly copied now.
+So this is the reason you got an exception Stack.
+Let's actually connect the SD card and check again.
+What is the mistake?
+So you can see it's not properly the root is not properly being loaded.
+You can see there is only one partition properly being present.
+So let's actually do it again.
+So now you can see we have two partitions perfectly present now.
+So you need to verify this.
+When you are doing command, you need to verify whether the partitions are present or not.
+After you do a command, you can disconnect the SD card reader and connect again and you can verify
+by checking whether they are properly mounting or not.
+So I'm going to again connect this back to Raspberry Pi.
+I power the device now?
+So it's no proper because the last time the route was not properly being written on the device.
+It's proper.
+And you can see now you can see here as the Ethernet is already connected now it automatically got the
+IP address on boot and you can see there is Dropbear being started.
+So job started.
+And now you can actually do an SSH.
+So I know the IP address.
+The way of one way of knowing IP address is by connecting a USB to serial converter.
+Or you can also check the IP address in the router page.
+You can verify the IP address, you can find the IP address in the router page.
+So all we need to have this.
+Yes.
+Well, it's not pie.
+It's actually fruit.
+So now you are in the Raspberry Pi.
+You have connected to the Raspberry Pi over the Ethernet interface.
+So if you do not have a USB to serial converter, you can use this mechanism.
+So but you need to know the IP address of the device.
+That you can that you can get from that page.
+
+--- Add extra space to root file system ---
+
+You can see the hard disk size.
+You can see here.
+Uh, the size of the root partition is 81 MB and it is already using 62.8 MB.
+And I only have 14 for my purpose.
+So if I create a file which is more than 14 MB, I do not have space for that.
+So how can I use the remaining space?
+But I had a four GB of SD card.
+But it is not displayed here.
+It's only displaying that I have only 681 MB of rootfs.
+I need four GB of my rootfs so how can I get that?
+So I can achieve it by.
+So this we have seen.
+So there is a configuration variable known as image underscore, underscore, extra underscore space.
+So this configuration variable, it adds extra free space to the root file system image.
+So the default value of this is zero.
+So if you say the default to the default value, you can say like this Bitbake hyphen E.
+You want to check the value of this variable?
+You can do a grip for extra image, root extra space.
+The default does not add any extra space to the root.
+So by default, it will not add any extra space to the road surface.
+So I need an extra space.
+How much of extra space I need?
+So you can see the default value is zero.
+So I need an extra space.
+So I need like I need an additional four gigabytes of space.
+I have a 32 gigabyte of SD card, but I only want an additional four gigabytes.
+So in this case I can write this.
+This is the value in kilobytes, so I can write this in the conf.
+And I can I can verify that.
+So this depends on how much size of your card is.
+If you have a two gigabytes of SD card, you can keep two gigabytes.
+If you have eight gigabytes, how much space you want for the additional space which you want for your
+files.
+You can keep it here.
+So now you have to again, generate an image.
+After you have modified the local count, you always need to do an image generation again.
+So this is taking time.
+So you have have both a serial connector as well as this is over Ethernet protocol.
+So you can use any of them.
+It's taking time.
+So let's wait until this completes.
+So this is what we have kept.
+The four gigabytes in kilobytes is being displayed now.
+Now we have to generate an image again.
+Because we have updated the.
+Local calls.
+We have to generate an image again.
+So I have already an image generated.
+So I will be using that image because this will take a lot of time.
+So I'll be using that image.
+Politics.
+So I have disconnected the serial cable.
+So I have a different folder for it.
+Again, the images will be present in the deploy.
+Images folder.
+So.
+I have the image again, this image, what I did is I have added an additional space of four gigabytes.
+I'm going to flash this on the SD card.
+So this will take time, because now this is not an small image, because now when we have said additional
+four gigabytes, the image is also the size of the image is also increased.
+So this is the reason you can see it's still taking time.
+Previously it was only 138 MB of image.
+Now it is nearly four gigabytes of image.
+So by.
+This is the reason it is taking time.
+You can see when you add status equals to progress, it will display what is happening.
+So let this complete.
+It will take time.
+So it took nearly four minutes.
+So we can say sing some more times.
+We can verify the partition size.
+Now.
+A block should help us.
+So you can now directly verify here.
+Again, this was not properly being written.
+So we need to do it again.
+But you can verify here the 40MB is the first partition size and the root is having four gigabytes.
+Let me do it again because this is not being properly written.
+So you have to verify whether the command successfully work or not.
+So till then, we can do some remaining stuff.
+So if I want to generate I do not have a Raspberry Pi three.
+I have a Raspberry Pi zero, which is the Raspberry Pi zero W or Raspberry Pi zero.
+These are the specs of Raspberry Pi zero.
+It is a single core CPU.
+We have a Raspberry Pi three, we have a quad core CPU, but this is a single core CPU and ram is like
+only five MB on the Raspberry Pi we have three, we have one GB of Ram, it has a mini HDMI and it also
+has a 40 pin header like Raspberry Pi.
+So and this like Raspberry Pi headers, it also has connect camera connector.
+As well as support for Wi-Fi and Bluetooth.
+So you have this here, so you do not have Ethernet here, you have a Wi-Fi and Bluetooth.
+So depending on like your cost.
+So it's very less cost like nearly 5 to $10 Raspberry Pi zero W is very cheaper, but you are losing
+some of the specs of Raspberry Pi.
+Like you only have a single core.
+You have a minimum ram like like the same ram of Beaglebone black.
+You do not have Ethernet here and you have like 40 pin header.
+You have you have Wi-Fi and Bluetooth.
+So this is the.
+So what are the steps for generating your image?
+Same steps like which we did previously, but except you have to have machine equals to raspberry Pi
+zero hyphen by five.
+So if you have a raspberry Pi zero w, then you have to use Raspberry Pi zero hyphen Wi-Fi.
+If you have some other board, simple Raspberry Pi zero, which does not have Wi-Fi, then have to use
+Raspberry Pi zero.
+So depending on which board you have, you have different options here, which we have seen sources
+Raspberry Pi conf machine, you can see depending on which you have, you have a zero, you have a two,
+three, four, you can select that particular name as the machine and then you can generate a Raspberry
+Pi image and the following, the remaining steps will be the same.
+So the steps will be the same.
+So it's still copying.
+You can see it takes times like it really takes.
+Four minutes to copy.
+You need to verify whether you are.
+Once you have flashed to the command, you need to verify by removing the SD card reader and connecting
+back again.
+And you have to verify that actually the files are actually being written on the SD card.
+So previously we had the same problem.
+We have to flash it twice and we are doing it again now.
+This can be this can happen depending on how good your card is, how old your card is.
+So you can verify it just by disconnecting and connecting again.
+So it will take time.
+Let me pause the video for now.
+So I have flashed again.
+Now you can verify here we have the second partition, which is root, which is having four gigabytes.
+The first partition is having four megabytes.
+40MB.
+Now we can connect our hard disk as a SD card to the Raspberry Pi and let's power it up.
+I'm going to power the Raspberry Pi now by connecting the SD card.
+So my Raspberry Pi is now booting up.
+So again, I got the same IP address.
+I can do an SSH.
+This needs to be run again.
+Now we can verify the hard disk space.
+Now you can see we have four gigabytes, which we have added and have available space like 3.5GB and
+2% is the used percentage.
+So now we have added an additional space which we can use to store anything like we can store our downloads
+and all in the Raspberry Pi, you can do many things in the space now.
+
+--- Resources ---
+
+[No transcript available for this lecture]

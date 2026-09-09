@@ -1,0 +1,32 @@
+\documentclass[11pt,a4paper]{article}
+
+% --- Load Preamble and Formatting ---
+\input{preamble.tex}
+
+\begin{document}
+
+% --- Title Banner ---
+\begin{center}
+    \tcbset{colback=NavyBlue,colframe=NavyBlue,arc=4mm}
+    \begin{tcolorbox}[width=\textwidth,halign=center,valign=center,top=6mm,bottom=6mm]
+        {\huge \color{white} \bfseries Embedded Linux Fundamentals \& Hands-On Buildroot Guide}\\[3mm]
+        {\large \color{white} Architectural Trade-offs, Build Systems, and Target System Deployment}\\[2mm]
+        {\small \color{white} Complete Comprehensive Lecture Notes \& Teaching Reference}
+    \end{tcolorbox}
+\end{center}
+
+\vspace{2mm}
+\tableofcontents
+\vspace{4mm}
+\hrule
+\vspace{6mm}
+
+% --- Modular Section Inputs ---
+\input{sections/01_introduction.tex}
+\input{sections/02_paradigms.tex}
+\input{sections/03_applications.tex}
+\input{sections/04_build_methods.tex}
+\input{sections/05_buildroot_lab.tex}
+\input{sections/06_instructor_notes.tex}
+
+\end{document}

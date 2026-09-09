@@ -1,0 +1,40 @@
+\section{Methods for Building Embedded Linux Systems}
+
+There are three primary strategies for bringing up a Linux system on embedded target hardware:
+
+\subsection{Strategy 1: Downloading Pre-Made Vendor Images}
+Downloading a binary \texttt{.img} file from a hardware vendor (e.g., Raspberry Pi OS, Ubuntu Server) and writing it to an SD card.
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Pros:} Fast setup, works immediately out of the box.
+    \item \textbf{Cons:} Heavy software bloat, long boot times, high storage footprint, unnecessary power consumption, difficult to maintain across thousands of deployed production units.
+\end{itemize}
+
+\subsection{Strategy 2: Manual Source Compilation ("Glutton for Punishment")}
+Manually fetching, cross-compiling, and linking toolchains, U-Boot, the Linux kernel, BusyBox, and every required library.
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Pros:} Maximum theoretical understanding of build steps.
+    \item \textbf{Cons:} Extremely tedious, error-prone, months of resolving cross-compiler dependency conflicts. Impractical for production.
+\end{itemize}
+
+\subsection{Strategy 3: Automated Build Systems (Buildroot, Yocto, OpenWRT)}
+Using specialized embedded build automation suites to generate tailored, minimal root filesystems, kernel binaries, and bootloaders.
+
+\begin{table}[h!]
+\centering
+\caption{Comparison of Automated Embedded Build Systems}
+\label{tab:build_tools}
+\small
+\begin{tabularx}{\textwidth}{l X X X}
+\toprule
+\textbf{Metric / Tool} & \textbf{Buildroot} & \textbf{Yocto Project (Poky/BitBake)} & \textbf{OpenWRT} \\
+\midrule
+\textbf{Primary Design Goal} & Simplicity \& Speed & Enterprise Scalability \& Customization & Networking \& Router Gear \\
+\textbf{Build Paradigm} & Single Make-based Makefile & Recipe-based (\texttt{.bb}) Layer system & Package Manager oriented \\
+\textbf{Learning Curve} & Very Low (Hours/Days) & High (Weeks/Months) & Moderate \\
+\textbf{Host Disk Footprint} & 5 GB -- 15 GB & 50 GB -- 100+ GB & 10 GB -- 20 GB \\
+\textbf{Rebuild Behavior} & Rebuilds whole tree on config change & Incremental recipe updates (sstate-cache) & Package feeds update \\
+\textbf{Target Update Model} & Monolithic OS image flash & Layered image or package feed & On-device package manager (\texttt{opkg}) \\
+\textbf{Best Use Case} & Single-purpose, fixed-function SBCs & Large fleet deployments, complex OS stacks & Network gateways, routers \\
+\bottomrule
+\end{tabularx}
+\end{table}

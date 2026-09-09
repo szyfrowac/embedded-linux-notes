@@ -1,0 +1,34 @@
+\section{Instructor Teaching Notes, Common Pitfalls, \& Student Exercises}
+
+\begin{tipbox}{Pedagogical Insight: Chip Variant Compatibility}
+\textbf{The 157A vs 157D Hardware Nuance:}
+In this lab, the defconfig \texttt{st\_stm32mp157a\_dk1\_defconfig} was used on an \textbf{STM32MP157D} board.
+\begin{itemize}[leftmargin=*]
+    \item \textbf{STM32MP157A:} Rated clock frequency up to 650 MHz (no hardware crypto engine).
+    \item \textbf{STM32MP157D:} Rated clock frequency up to 800 MHz (includes hardware crypto engine).
+\end{itemize}
+Because clock setups in the 157A defconfig bootloader run the core at 650 MHz, running the 157A binary image on a 157D chip safely underclocks the hardware. While safe for testing, instructors should emphasize that production builds must match exact chip sub-variants to utilize full performance and peripheral hardware features.
+\end{tipbox}
+
+\subsection{Troubleshooting \& Common Student Errors}
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Permission Denied on \texttt{/dev/ttyACM0}:}
+    Students forget to add their host user account to the \texttt{dialout} group or fail to re-login to update group privileges.
+    \item \textbf{No Output on Serial Terminal:}
+    Verify physical baud rate (must be set to 115200). Ensure Micro-USB cable supports data communication, not power only.
+    \item \textbf{Target Fails to Boot from SD Card:}
+    Verify DIP switches \texttt{BOOT0} and \texttt{BOOT2} are flipped to ON. Verify that \texttt{dd} was flashed to the raw disk node (\texttt{/dev/mmcblk2}) and that \texttt{sync} was executed before card extraction.
+\end{enumerate}
+
+\subsection{Student Review Questions}
+\begin{enumerate}[leftmargin=*]
+    \item Contrast bare-metal programming with Embedded Linux in terms of real-time determinism, memory requirements, and code portability.
+    \item Explain the function of a Memory Management Unit (MMU) and state why it is mandatory for running standard Embedded Linux.
+    \item Describe the architecture of a Heterogeneous Multi-Core SoC (e.g., STM32MP1) and explain how task allocation is divided between MPU and MCU cores.
+    \item Compare Buildroot and the Yocto Project. Under what conditions would an engineering team choose Buildroot over Yocto?
+    \item Trace the boot sequence of an embedded Linux target from power-on reset to the root login prompt.
+\end{enumerate}
+
+\begin{takeawaybox}{Summary of Key Concepts}
+Embedded Linux provides an unparalleled ecosystem for building powerful, networked, and portable embedded products. By leveraging automated build frameworks like Buildroot, developers eliminate bloat, minimize hardware footprint, achieve fast boot times, and maintain complete control over every binary included in production devices.
+\end{takeawaybox}
