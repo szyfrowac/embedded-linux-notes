@@ -1,0 +1,109 @@
+---
+title: "NetworkManager and systemd-networkd"
+description: "Configure networking declaratively on systemd images, and decide when the heavier NetworkManager is worth its size."
+lesson:
+  module: "Networking and services"
+  level: Intermediate
+  time: "30 min"
+  needs:
+    - label: "Network interface configuration"
+      slug: "network-interface-configuration"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives items={[
+  "Write a systemd-networkd .network file for a static and a DHCP interface",
+  "Enable networkd and resolved in a Yocto image",
+  "Configure an interface with nmcli",
+  "Choose between ifupdown, networkd and NetworkManager for a product",
+]} />
+
+<Prerequisites
+  knowledge={["Configuring an interface by hand with ip", "systemd units and systemctl"]}
+  software={["A Yocto image that uses systemd as init manager"]}
+/>
+
+## Three ways to configure the same interface
+
+| | ifupdown | systemd-networkd | NetworkManager |
+|---|---|---|---|
+| Configuration | `/etc/network/interfaces` | `.network` files in `/etc/systemd/network/` | Connection profiles, `nmcli` or D-Bus |
+| Reacts to cable plug or unplug | No | Yes | Yes |
+| Wi-Fi roaming, VPN, captive portals | No | Basic (with wpa_supplicant) | Yes |
+| Extra size | Very small | Part of systemd | Several MB plus D-Bus and GLib |
+
+For a headless device with one or two wired ports, systemd-networkd is usually the right choice. NetworkManager earns its size on devices with Wi-Fi that move between networks, or where a user changes settings through a UI.
+
+## systemd-networkd
+
+Each `.network` file matches one or more interfaces and says how to configure them. Files are read in lexical order; the first match wins, so prefix them with a number.
+
+```ini
+# /etc/systemd/network/20-wired.network
+[Match]
+Name=eth0
+
+[Network]
+Address=192.168.7.2/24
+Gateway=192.168.7.1
+DNS=192.168.7.1
+```
+
+For DHCP the `[Network]` section shrinks to `DHCP=ipv4`.
+
+Enable it at build time. In recent Yocto releases networkd is a `PACKAGECONFIG` option of the systemd recipe:
+
+```bitbake
+# conf/local.conf or your distro configuration
+INIT_MANAGER = "systemd"
+PACKAGECONFIG:append:pn-systemd = " networkd resolved"
+```
+
+Then install your `.network` file from a recipe into `${sysconfdir}/systemd/network/`.
+
+On the target:
+
+```bash
+networkctl list
+networkctl status eth0
+```
+
+:::tip[Wait for the network properly]
+A service that needs an address at start-up should declare `After=network-online.target` and `Wants=network-online.target`. With networkd, `systemd-networkd-wait-online.service` provides that target. Without it, your service may start before DHCP finishes.
+:::
+
+## NetworkManager
+
+Add it with the `networkmanager` recipe from `meta-openembedded/meta-networking`. On the target, configure with `nmcli`:
+
+```bash
+nmcli device status
+nmcli connection add type ethernet ifname eth0 con-name wired \
+    ipv4.method manual ipv4.addresses 192.168.7.2/24 ipv4.gateway 192.168.7.1
+nmcli connection up wired
+```
+
+Profiles are saved under `/etc/NetworkManager/system-connections/`, so you can also ship them from a recipe. Make sure only one tool manages each interface: if both networkd and NetworkManager try to configure `eth0`, they will undo each other.
+
+<Exercise
+  title="Switch an image to systemd-networkd"
+  difficulty="Intermediate"
+  instructions="Take an image that uses systemd. Enable networkd, write a recipe that installs a .network file giving eth0 a static address, rebuild and boot it."
+  hints={["Check that the file lands in the image with: bitbake -e your-image | grep ^IMAGE_ROOTFS= and then look under that path.", "networkctl reports 'unmanaged' when no .network file matched the interface."]}
+  expectedOutcome="After boot, networkctl shows eth0 as routable and configured, with no commands typed on the target."
+  verificationSteps={["networkctl list shows eth0 with SETUP 'configured'", "systemctl is-enabled systemd-networkd prints enabled"]}
+  solution={`# recipes-core/network-config/network-config.bb
+SUMMARY = "Static address for eth0"
+LICENSE = "MIT"
+LIC_FILES_CHKSUM = "file://\${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+SRC_URI = "file://20-wired.network"
+S = "\${WORKDIR}"
+
+do_install() {
+    install -d \${D}\${sysconfdir}/systemd/network
+    install -m 0644 \${WORKDIR}/20-wired.network \${D}\${sysconfdir}/systemd/network/
+}`}
+/>

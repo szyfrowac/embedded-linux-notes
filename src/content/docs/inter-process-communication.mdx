@@ -1,0 +1,104 @@
+---
+title: "Inter-process communication"
+description: "Pass data between processes on one device with pipes, Unix domain sockets, message queues and shared memory, and know which to reach for."
+lesson:
+  module: "Networking and services"
+  level: Intermediate
+  time: "40 min"
+  needs:
+    - label: "Writing C applications"
+      slug: "writing-recipes-and-c-apps"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives items={[
+  "Compare pipes, Unix domain sockets, POSIX message queues and shared memory",
+  "Write a Unix domain socket server and client in C",
+  "Set file permissions so only the right users can connect",
+  "Relate local IPC to communication between cores (RPMsg)",
+]} />
+
+<Prerequisites
+  knowledge={["C with file descriptors: open, read, write, close"]}
+  software={["A cross-compiler (Yocto SDK or Buildroot toolchain)", "A target you can copy programs to"]}
+/>
+
+## Picking a mechanism
+
+| Mechanism | Shape of data | Between | Notes |
+|---|---|---|---|
+| Pipe or FIFO | Byte stream, one direction | Related processes (pipe) or any (FIFO) | Simplest; good for a producer feeding one consumer |
+| Unix domain socket | Stream or datagrams, both directions | Any processes | File permissions control access; can pass file descriptors |
+| POSIX message queue | Discrete messages with priority | Any processes | Kernel keeps message boundaries; `mq_open`, `mq_send` |
+| Shared memory | Raw memory | Any processes | Fastest, but you must add your own locking |
+| D-Bus | Method calls and signals | Services on a system bus | Heavy, but standard on desktop-like stacks |
+
+A sensor daemon that serves readings to several clients is a typical case for a Unix domain socket. A camera pipeline moving megabytes per frame is a case for shared memory.
+
+## A Unix domain socket server
+
+```c
+/* sensord.c: answers every client with one reading, then closes. */
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
+
+#define SOCK_PATH "/run/sensord.sock"
+
+int main(void)
+{
+    int srv = socket(AF_UNIX, SOCK_STREAM, 0);
+    struct sockaddr_un addr = { .sun_family = AF_UNIX };
+    strncpy(addr.sun_path, SOCK_PATH, sizeof(addr.sun_path) - 1);
+
+    unlink(SOCK_PATH);                       /* remove a stale socket file */
+    if (bind(srv, (struct sockaddr *)&addr, sizeof(addr)) < 0) { perror("bind"); return 1; }
+    chmod(SOCK_PATH, 0660);                  /* owner and group only */
+    listen(srv, 4);
+
+    for (;;) {
+        int c = accept(srv, NULL, NULL);
+        if (c < 0) continue;
+        const char *msg = "temp_mC=41250\n";
+        write(c, msg, strlen(msg));
+        close(c);
+    }
+}
+```
+
+The client is the mirror image: `socket`, `connect` to the same path, `read`. For a quick test you do not need to write it; if `socat` is installed on the target:
+
+```bash
+./sensord &
+socat - UNIX-CONNECT:/run/sensord.sock
+```
+
+:::note[Access control comes from the filesystem]
+Because the socket is a file, ordinary permissions decide who may connect. Run the daemon as its own user and put clients in its group, instead of opening a TCP port that anything on the network could reach.
+:::
+
+## From processes to cores
+
+On a heterogeneous chip, the same idea crosses CPU boundaries. In the [Chipwings case study](../polarfire-soc-chipwings-amp-guide/), NuttX on one core and Linux on the others exchange messages over RPMsg. On the Linux side the channel appears as a character device (for example `/dev/rpmsg0` or `/dev/ttyRPMSG0`), so a Linux program talks to the real-time core with the same `read` and `write` calls you used above.
+
+<Exercise
+  title="Two clients, one daemon"
+  difficulty="Intermediate"
+  instructions="Write the client side of sensord in C. Run the daemon and two clients at once, then change the socket permissions to 0600 and run a client as a different user."
+  hints={["connect() needs the same struct sockaddr_un as bind().", "Create a test user with adduser -D test (BusyBox) and switch with su test -c ./client."]}
+  expectedOutcome="Both clients print a reading. After the change to 0600, the client running as another user fails with 'Permission denied'."
+  verificationSteps={["ls -l /run/sensord.sock shows the socket type 's' and the mode you set", "strace -e connect ./client (if strace is installed) shows the EACCES error"]}
+  solution={`int s = socket(AF_UNIX, SOCK_STREAM, 0);
+struct sockaddr_un a = { .sun_family = AF_UNIX };
+strncpy(a.sun_path, "/run/sensord.sock", sizeof(a.sun_path) - 1);
+if (connect(s, (struct sockaddr *)&a, sizeof(a)) < 0) { perror("connect"); return 1; }
+char buf[64]; ssize_t n = read(s, buf, sizeof(buf) - 1);
+if (n > 0) { buf[n] = 0; fputs(buf, stdout); }
+close(s);`}
+/>

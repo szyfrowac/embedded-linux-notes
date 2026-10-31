@@ -1,7 +1,7 @@
 # Makefile for Embedded Linux Notes Documentation & LaTeX Project
 
 BUILD_DIR = output
-SRC_DIR = src
+SRC_DIR = latex-src
 TARGET = embedded_linux_lecture_notes
 
 .PHONY: all clean pdf html dev
@@ -26,5 +26,5 @@ pdf:
 	@echo "Compilation Complete! Generated: $(BUILD_DIR)/$(TARGET).pdf"
 
 clean:
-	@rm -rf $(BUILD_DIR)/* docs/.vitepress/dist docs/.vitepress/cache
+	@rm -rf $(BUILD_DIR)/* dist .astro
 	@echo "Cleaned build output directories."

@@ -1,0 +1,64 @@
+---
+title: "Capstone: build and deploy a networked embedded application"
+description: "Ship a small device service end to end: a daemon that reads data, a local IPC socket, a JSON endpoint on the network, a locked-down systemd unit and a recipe."
+lesson:
+  module: "Capstone projects"
+  level: Advanced
+  time: "8–10 hours"
+  needs:
+    - label: "Inter-process communication"
+      slug: "inter-process-communication"
+    - label: "Embedded web services"
+      slug: "embedded-web-services"
+    - label: "Secure remote access"
+      slug: "secure-remote-access"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+<LearningObjectives items={[
+  "Split a device application into a data daemon and a network front end",
+  "Package, start and confine both with Yocto and systemd",
+  "Prove the service survives restarts, reboots and bad input",
+]} />
+
+<Prerequisites
+  knowledge={["Module 6", "Writing recipes for C programs"]}
+  software={["A systemd-based Yocto image for QEMU or a board"]}
+/>
+
+## Goal
+
+A device reports a sensor value over HTTP. On QEMU the sensor can be simulated, for example by reading `/sys/class/thermal/thermal_zone0/temp` if present or generating a slowly changing value.
+
+```mermaid
+flowchart LR
+    S["sensor source<br/>sysfs or simulated"] --> D["sensord<br/>(own user)"]
+    D -->|"Unix socket /run/sensord.sock"| W["web front end<br/>(own user)"]
+    W -->|"HTTP :8080 /api/reading"| C["client on the LAN"]
+```
+
+## Requirements
+
+- `sensord` and the front end are separate processes running as separate unprivileged users.
+- The socket is mode `0660`, group shared only by the two users.
+- `GET /api/reading` returns JSON with the value and a timestamp; `GET /health` returns 200 or 503.
+- Both run from systemd units with `Restart=on-failure` and the `Protect*` hardening options.
+- A recipe builds and installs everything; nothing is copied by hand.
+- The firewall allows port 8080 from the LAN only.
+
+## Milestones
+
+1. Write and test `sensord` on the host, then cross-compile.
+2. Write the front end (CGI behind BusyBox httpd, or a small C or Python server).
+3. Write the recipe with `useradd.bbclass` and `systemd.bbclass`.
+4. Add the nftables rule and confirm with `nmap` from the host.
+5. Failure testing: kill each process, reboot, send malformed requests.
+
+## Acceptance checks
+
+- `curl http://<device>:8080/api/reading` returns valid JSON after a cold boot with no manual steps.
+- `kill -9` on either process is followed by an automatic restart (`journalctl` shows it).
+- `ps -o user,comm` shows neither process running as root.
+- A request with a 10 KB URL does not crash the front end.

@@ -1,0 +1,85 @@
+---
+title: "Memory and storage optimization"
+description: "Measure real memory use, understand what the OOM killer does, and pick flash filesystems and mount options that fit the device."
+lesson:
+  module: "Performance, debugging and optimization"
+  level: Advanced
+  time: "35 min"
+  needs:
+    - label: "Linux logging and diagnostics"
+      slug: "logging-and-diagnostics"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives items={[
+  "Read /proc/meminfo and tell used memory from page cache",
+  "Measure a single process's real memory with PSS",
+  "Control what happens when memory runs out",
+  "Choose a filesystem for each part of the flash",
+]} />
+
+<Prerequisites
+  knowledge={["Virtual memory basics: pages, the page cache, swap"]}
+  software={["A booted target; smem is helpful but optional"]}
+/>
+
+## Is memory really low?
+
+`free` is often misread. Linux uses spare RAM as page cache and gives it back when programs need it.
+
+```bash
+free -k
+grep -E "MemTotal|MemAvailable|Cached|Shmem" /proc/meminfo
+```
+
+`MemAvailable` is the number to watch: an estimate of how much memory can be handed to programs without swapping. `MemFree` alone is almost always small on a healthy system.
+
+## How much does one process use?
+
+`VSZ` in `ps` counts address space, not memory. `RSS` counts resident pages but charges shared libraries in full to every process. `PSS` divides shared pages between their users, so the PSS values of all processes add up to the real total:
+
+```bash
+grep -E "^(Rss|Pss)" /proc/<pid>/smaps_rollup
+smem -k -s pss -r | head      # if smem is installed
+```
+
+## When memory runs out
+
+Without swap, the kernel's out-of-memory killer picks a process to kill. You can steer its choice per process:
+
+```bash
+echo -1000 > /proc/<pid>/oom_score_adj    # never kill (use for the main control process)
+echo 500 > /proc/<pid>/oom_score_adj      # prefer killing this one
+```
+
+In a systemd unit the same setting is `OOMScoreAdjust=`. Kernel messages beginning with `Out of memory: Killed process` tell you it happened.
+
+For a little extra headroom without swapping to flash, `zram` keeps a compressed swap area in RAM. It trades CPU time for memory and works well for workloads with compressible data.
+
+## Storage: one filesystem does not fit all
+
+| Part of the system | Suggested filesystem | Why |
+|---|---|---|
+| Root filesystem, read-only | SquashFS | Compressed, cannot be corrupted by power loss |
+| Writable data on eMMC or SD | ext4 (with journaling) or F2FS | Recovers from power loss; F2FS is designed for flash |
+| Writable data on raw NAND | UBIFS on UBI | Handles bad blocks and wear levelling that raw NAND lacks |
+| Temporary files, logs | tmpfs | Lives in RAM, no flash wear |
+
+:::tip[Mount options that save flash]
+`noatime` stops every read from writing an access time. `commit=60` on ext4 batches journal commits. Both reduce writes at the cost of possibly losing the last few seconds of data on power loss.
+:::
+
+See [Hardening, optimization and OTA](../production-optimization-hardening-ota/) for a read-only root filesystem with a writable overlay.
+
+<Exercise
+  title="Who is using the memory?"
+  difficulty="Advanced"
+  instructions="On your target, record MemAvailable, then start three copies of the same program. Compare the sum of their RSS values with the sum of their PSS values and with the change in MemAvailable."
+  hints={["Use a program that links shared libraries, such as a shell started with sleep: sh -c 'sleep 600' &", "Read Pss from /proc/<pid>/smaps_rollup for each PID."]}
+  expectedOutcome="The sum of RSS is noticeably larger than the sum of PSS, and the PSS sum is close to the drop in MemAvailable."
+  verificationSteps={["You can explain the difference: shared library pages are counted once per process in RSS but split in PSS"]}
+  solution="Shared pages (libc, the program text) are counted in full in each process's RSS, so three copies triple-count them. PSS gives each process one third of those pages, which is why the PSS total matches what the system actually lost."
+/>

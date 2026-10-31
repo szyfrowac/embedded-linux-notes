@@ -1,0 +1,95 @@
+---
+title: "SSH and remote development"
+description: "Add an SSH server to your image, log in with keys instead of passwords, and use SSH to copy, run and debug programs on the target."
+lesson:
+  module: "Networking and services"
+  level: Intermediate
+  time: "30 min"
+  needs:
+    - label: "Network interface configuration"
+      slug: "network-interface-configuration"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives items={[
+  "Choose between Dropbear and OpenSSH for an image and add it",
+  "Log in to the target with an SSH key",
+  "Copy a cross-compiled program to the target and run it in one command",
+  "Explain why debug-tweaks must not ship in a product",
+]} />
+
+<Prerequisites
+  knowledge={["Writing and building a C recipe", "A working network link between host and target"]}
+  software={["A Yocto build directory, or a Buildroot tree", "ssh and scp on the host"]}
+/>
+
+## Dropbear or OpenSSH
+
+| | Dropbear | OpenSSH |
+|---|---|---|
+| Size on target | Around 100 to 200 KB | Several MB with its libraries |
+| `scp` and `sftp` | `scp` needs the `scp` program present on the target | Full support |
+| Yocto image feature | `ssh-server-dropbear` | `ssh-server-openssh` |
+| Typical use | Small images, quick development access | Products that need sftp, port forwarding policies or certificates |
+
+Pick one; the two image features conflict.
+
+```bitbake
+# conf/local.conf (development) or your image recipe
+IMAGE_FEATURES += "ssh-server-dropbear"
+```
+
+In Buildroot, enable `BR2_PACKAGE_DROPBEAR` or `BR2_PACKAGE_OPENSSH` under *Target packages, Networking applications*.
+
+## Log in with a key
+
+Password logins are slow to type and easy to guess. Generate a key on the host once, then install the public half on the target:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/target_ed25519
+ssh-copy-id -i ~/.ssh/target_ed25519.pub root@192.168.7.2
+ssh -i ~/.ssh/target_ed25519 root@192.168.7.2
+```
+
+To bake the key into the image instead, install it from a recipe into `/home/root/.ssh/authorized_keys` with mode `0600`, owned by root.
+
+:::danger[debug-tweaks]
+`IMAGE_FEATURES += "debug-tweaks"` (renamed in newer Yocto releases to `allow-empty-password`, `empty-root-password` and `post-install-logging`) lets root log in with no password. It is convenient on the bench and must never reach a shipped image. Check your image recipe and `local.conf` before a release build.
+:::
+
+## The edit, build, copy, run loop
+
+Once SSH works, a cross-compiled program goes from your editor to the target in one line:
+
+```bash
+$CC -O2 -o hello hello.c && scp hello root@192.168.7.2:/tmp/ && ssh root@192.168.7.2 /tmp/hello
+```
+
+`$CC` is set by sourcing the Yocto SDK environment script (see [SDKs and package management](../sdk-generation-package-management-licensing/)). For larger trees, `rsync -a build/ root@target:/opt/app/` copies only what changed, if rsync is installed on the target.
+
+## Add a host alias
+
+Typing the address and key every time gets old. Add an entry to `~/.ssh/config` on the host:
+
+```text
+Host qemu
+    HostName 192.168.7.2
+    User root
+    IdentityFile ~/.ssh/target_ed25519
+    StrictHostKeyChecking accept-new
+```
+
+Now `ssh qemu` and `scp hello qemu:/tmp/` work. `accept-new` trusts a host the first time you see it but still warns if its key changes later, which happens every time you rebuild and reflash an image with fresh host keys. Remove the old entry with `ssh-keygen -R 192.168.7.2` when that happens.
+
+<Exercise
+  title="Passwordless deploy"
+  difficulty="Intermediate"
+  instructions="Add Dropbear to your image, install your public key on the target, and add a host alias. Then compile a hello-world program with the SDK compiler and run it on the target with a single command line."
+  hints={["If ssh asks for a password even after ssh-copy-id, check the permissions: ~/.ssh must be 700 and authorized_keys 600 on the target.", "Dropbear reads keys from the same authorized_keys file as OpenSSH."]}
+  expectedOutcome="One command line on the host compiles the program, copies it and prints its output, without any password prompt."
+  verificationSteps={["ssh qemu true returns immediately with exit status 0", "file hello on the host reports the target architecture, not x86-64"]}
+  solution={`$CC -O2 -o hello hello.c && scp hello qemu:/tmp/ && ssh qemu /tmp/hello`}
+/>

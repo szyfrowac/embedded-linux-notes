@@ -1,0 +1,181 @@
+---
+title: "02. Architecture Paradigms: Bare Metal vs RTOS vs AMP vs SMP"
+description: "Comprehensive engineering comparison between Bare Metal, RTOS, Embedded Linux, and Heterogeneous Asymmetric Multi-Processing (AMP)."
+lesson:
+  module: "Architecture paradigms and fundamentals"
+  level: Beginner
+  time: "20 min"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import CommandBlock from '../../components/CommandBlock.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives outcomes={[
+  "Evaluate CPU capability, MMU availability, memory hierarchy, and power budgets across embedded architectures.",
+  "Contrast execution determinism and interrupt latency between Bare Metal, RTOS (FreeRTOS/NuttX), and Linux.",
+  "Analyze Asymmetric Multi-Processing (AMP) on heterogeneous SoCs (e.g., PolarFire SoC, STM32MP1, i.MX8).",
+  "Measure real-time scheduling jitter using the PREEMPT_RT patch and cyclictest benchmark."
+]} />
+
+<Prerequisites 
+  knowledge={[
+    "Microcontroller register concepts (GPIO, Interrupt Service Routines, Timers)",
+    "Operating system fundamentals: virtual memory, page tables, and context switching"
+  ]}
+  software={[
+    "Linux host terminal with gcc and build essentials"
+  ]}
+/>
+
+## Selecting the Right Embedded Architecture
+
+Architecting an embedded device requires balancing computational throughput, memory footprint, thermal constraints, unit bill-of-materials (BOM) cost, development velocity, and strict timing determinism.
+
+No single architectural paradigm solves all requirements. Embedded engineers select among four primary design paradigms:
+
+```
++-----------------------------------------------------------------------------------+
+|                            EMBEDDED PARADIGMS SPECTRUM                            |
+|                                                                                   |
+|  [Bare Metal] --------> [RTOS] --------> [PREEMPT_RT Linux] ------> [Hetero AMP]  |
+|   Hard Real-Time       Deterministic       Soft Real-Time            Dual-Domain  |
+|   Zero OS Overhead     Light Scheduler     Full OS Capabilities      RTOS + Linux |
+|   Microsecond Latency  SRAM-friendly       High Throughput           Shared SRAM  |
++-----------------------------------------------------------------------------------+
+```
+
+---
+
+## 1. Bare Metal Programming
+
+Bare metal development involves executing firmware directly on the silicon hardware without any intermediate abstraction layer, thread scheduler, or memory protection.
+
+- **Target Processors:** 8-bit (e.g., AVR ATmega328P), 16-bit (TI MSP430), and 32-bit Microcontrollers (MCUs) like ARM Cortex-M0+/M3.
+- **Hardware Access:** Direct memory-mapped register manipulation (`*((volatile uint32_t*)0x40020000) |= (1 << 5)`).
+- **Control Loop:** Superloop architecture (`while(1)`) augmented by hardware Interrupt Service Routines (ISRs).
+- **Advantages:** Sub-microsecond interrupt response, zero context-switch overhead, complete execution determinism, negligible static power draw.
+- **Disadvantages:** Extreme firmware coupling to specific silicon errata; virtually impossible to run complex concurrent network stacks (TLS 1.3, IPv6), dynamic filesystems, or graphical user interfaces reliably.
+
+---
+
+## 2. Real-Time Operating Systems (RTOS)
+
+An RTOS (such as FreeRTOS, NuttX, or Zephyr) introduces a prioritized preemptive scheduler, inter-task communication primitives (queues, mutexes, semaphores), and hardware timers while keeping memory footprint within tens of kilobytes of SRAM.
+
+- **Target Processors:** 32-bit MCUs (ARM Cortex-M4/M7, ESP32, RISC-V RV32).
+- **Execution Model:** Flat physical memory address space. All tasks share a single address space unless a Memory Protection Unit (MPU) is explicitly programmed.
+- **Advantages:** Predictable, bounded task switching (typically under 2 microseconds); deterministic interrupt latency; lightweight resource consumption.
+- **Disadvantages:** Absence of virtual memory (MMU) means memory fragmentation can cause allocation failures over prolonged uptimes. Software crashes in any single task can corrupt global memory and crash the entire system.
+
+---
+
+## 3. Embedded General-Purpose Linux (SMP)
+
+Embedded Linux executes on high-performance multi-core microprocessors (MPUs) with a Memory Management Unit (MMU). The kernel enforces process isolation, virtual address translation, and POSIX multithreading across Symmetric Multi-Processing (SMP) cores.
+
+- **Target Processors:** 32-bit and 64-bit MPUs (ARM Cortex-A53/A72, RISC-V RV64GC, x86_64).
+- **Memory Requirements:** External DRAM (256MB to 16GB), high-speed non-volatile storage (eMMC, NVMe, NAND Flash).
+- **Advantages:** Unmatched software versatility. Direct support for containerization (Docker/Podman), relational databases, web servers, high-level languages (Python, Go, Rust), and complex machine vision pipelines (OpenCV, TensorFlow Lite).
+- **Disadvantages:** Non-deterministic latency due to kernel locks, page faults, and asynchronous garbage collection. Cold boot times range from 2 to 30 seconds without aggressive optimization.
+
+:::tip
+**Can Linux Achieve Hard Real-Time? The PREEMPT_RT Patch**
+Standard mainline Linux kernels are throughput-optimized rather than latency-bounded. By applying the `PREEMPT_RT` patch (fully integrated into modern kernels), critical sections and interrupt handlers become preemptible threads (`irq/`), bounding worst-case latency to tens of microseconds on modern ARM Cortex-A silicon.
+:::
+
+---
+
+## 4. Heterogeneous Asymmetric Multi-Processing (AMP)
+
+High-assurance aerospace, robotics, and industrial automation platforms frequently demand **both** hard real-time motor control and rich graphical/networked userspace applications. 
+
+Modern heterogeneous SoCs integrate both domains onto a single silicon die:
+
+```
++-----------------------------------------------------------------------------------+
+|                       HETEROGENEOUS SYSTEM-ON-CHIP (AMP)                          |
+|                                                                                   |
+|  +-------------------------------------+   +------------------------------------+ |
+|  |     Application Cores (SMP)         |   |      Real-Time Core (AMP)          | |
+|  |      ARM Cortex-A53 / RV64          |   |     ARM Cortex-M4 / RV32           | |
+|  |  [ Embedded Linux Userspace ]       |   |  [ NuttX / FreeRTOS / Bare Metal ] | |
+|  |  - Networking (Wi-Fi, 4G, SSH)      |   |  - 1000 Hz Flight Control Loop     | |
+|  |  - Video Streaming / Web Dashboard  |   |  - ESC Motor PWM Generation        | |
+|  |  - High-Level Mission Logic         |   |  - Hard Real-Time Sensor Fusion    | |
+|  +------------------+------------------+   +------------------+-----------------+ |
+|                     |                                         |                   |
+|                     |       Hardware Mailbox / Shared SRAM    |                   |
+|                     +=========================================+                   |
+|                               [ OpenAMP / RPMsg Ring ]                            |
++-----------------------------------------------------------------------------------+
+```
+
+- **Safety Isolation:** Even if the Linux kernel experiences an Out-Of-Memory (OOM) panic or crash, the real-time core continues running its safety-critical motor control and telemetry loop without interruption.
+- **Inter-Core Communication:** Cores exchange structured packets via shared memory ring buffers synchronized through hardware mailbox interrupts using the standardized `OpenAMP` and `RPMsg` protocols.
+
+---
+
+## Architecture Comparison Matrix
+
+| Architectural Dimension | Bare Metal | RTOS (NuttX / FreeRTOS) | Embedded Linux (SMP) | Heterogeneous AMP |
+| :--- | :--- | :--- | :--- | :--- |
+| **Silicon Target** | Low-end MCU | 32-bit MCU (Cortex-M) | Multi-core MPU (Cortex-A) | Hybrid SoC (MPU + MCU) |
+| **Memory Management (MMU)** | None | None / Optional MPU | Mandatory (Virtual Memory) | Split: MMU on A-core, MPU on M-core |
+| **System Memory Footprint** | < 64 KB SRAM | 32 KB – 1 MB SRAM | 64 MB – 8 GB DRAM | Partitioned SRAM + DRAM |
+| **Worst-Case Latency** | < 1 $\mu$s | < 5 $\mu$s | ~100 $\mu$s (standard) / < 20 $\mu$s (RT) | Sub-microsecond on real-time core |
+| **Software Fault Isolation** | None (Single Crash) | None (Shared Address Space) | High (MMU Process Isolation) | Total Physical Silicon Partitioning |
+| **Cold Boot Duration** | < 5 milliseconds | < 50 milliseconds | 2 to 15 seconds | Sub-second RTOS, deferred Linux |
+| **Development Velocity** | Low (Hardware specific) | Moderate (C/C++ POSIX APIs) | Ultra-High (Modern Ecosystem) | High (Standardized OpenAMP) |
+
+---
+
+## Real-Time Benchmarking with Cyclictest
+
+Engineers verify whether a Linux kernel meets real-time latency deadlines using the `cyclictest` benchmark from the Linux Foundation's `rt-tests` suite.
+
+<CommandBlock
+  command="sudo cyclictest --smp -p98 -m -d0 -i1000 -l100000"
+  cwd="root@target:~#"
+  output={`# /dev/cpu_dma_latency set to 0us
+policy: fifo: loadavg: 1.14 0.89 0.45 2/108 1422
+
+T: 0 ( 1422) P:98 I:1000 C: 100000 Min:      4 Act:    7 Avg:    8 Max:      19
+T: 1 ( 1423) P:98 I:1500 C:  66666 Min:      4 Act:    8 Avg:    8 Max:      22
+T: 2 ( 1424) P:98 I:2000 C:  50000 Min:      5 Act:    7 Avg:    8 Max:      21
+T: 3 ( 1425) P:98 I:2500 C:  40000 Min:      4 Act:    9 Avg:    9 Max:      24`}
+  explanation="Measures timer latency on 4 SMP cores with SCHED_FIFO priority 98. Over 100,000 iterations, the maximum latency remained strictly below 25 microseconds."
+/>
+
+---
+
+## Practical Lab Challenge
+
+<Exercise
+  title="Lab 1.2: UAV Avionics Architecture Selection"
+  instructions="Design the avionics architecture for an autonomous UAV quadcopter. Requirements: 1) Run an active attitude estimation and PID motor control loop at 1000 Hz (1 ms deadline, max jitter < 15 microseconds). 2) Stream 1080p H.264 camera video over 4G LTE to a ground station. 3) Provide an onboard REST API for mission waypoints. Determine whether Bare Metal, single-core RTOS, pure Embedded Linux, or Heterogeneous AMP is required, and justify your selection based on the MMU and latency trade-offs."
+  hints={[
+    "Calculate the budget: 1000 Hz loop means one full cycle every 1000 microseconds.",
+    "Can standard Linux guarantee jitter below 15 microseconds during 1080p H.264 video compression?",
+    "Can a microcontroller RTOS run an H.264 video encoder pipeline and multi-threaded Web API?"
+  ]}
+  expectedOutcome="Identify that neither RTOS nor pure Linux alone can satisfy both hard real-time motor control and heavy video streaming, concluding that Heterogeneous AMP (e.g., PolarFire SoC or STM32MP1) is the architecturally sound design."
+  solution={`Architectural Decision: Heterogeneous AMP (Asymmetric Multi-Processing)
+
+Justification:
+1. Hard Real-Time Core (e.g., RISC-V E51 or Cortex-M4 running NuttX RTOS):
+   - Executes the 1000 Hz flight attitude loop.
+   - Bounded jitter < 2 microseconds ensures brushless motor ESC signals never stutter.
+   - Total isolation from Linux memory crashes or video encoding CPU spikes.
+
+2. Application Cores (e.g., Quad RV64 / Cortex-A53 running Embedded Linux):
+   - Handles H.264 video hardware encoding and GStreamer RTP pipeline.
+   - Runs QGroundControl MAVLink telemetry bridge and REST API over 4G LTE.
+
+3. Inter-Process Communication:
+   - Shared SRAM buffer running OpenAMP / RPMsg transmitting waypoint updates from Linux to NuttX.`}
+/>
+
+---
+

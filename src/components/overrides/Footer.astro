@@ -1,0 +1,55 @@
+---
+// Adds the completion and feedback row to lesson pages, above Starlight's
+// own footer (edit link, last updated, previous/next).
+import Default from '@astrojs/starlight/components/Footer.astro';
+
+const lesson = Astro.locals.starlightRoute.entry.data.lesson;
+---
+
+{
+  lesson && (
+    <div class="fd-done-row not-content">
+      <button type="button" class="fd-complete" aria-pressed="false" data-fd-complete>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17 19 7" /></svg>
+        <span>Mark lesson complete</span>
+      </button>
+      <div class="fd-feedback" data-fd-feedback>
+        <span id="fd-feedback-q">Was this lesson helpful?</span>
+        <button type="button" data-vote="yes" aria-describedby="fd-feedback-q">Yes</button>
+        <button type="button" data-vote="no" aria-describedby="fd-feedback-q">No</button>
+        <span class="fd-feedback-done" role="status" hidden>Thanks. Your answer is saved in this browser only.</span>
+      </div>
+    </div>
+  )
+}
+<Default />
+
+<script>
+  import '../../scripts/mermaid';
+  import { progress, currentSlug, EVENT } from '../../scripts/progress';
+
+  const btn = document.querySelector<HTMLButtonElement>('[data-fd-complete]');
+  if (btn) {
+    const slug = currentSlug();
+    const label = btn.querySelector('span')!;
+    const sync = () => {
+      const done = progress.isComplete(slug);
+      btn.setAttribute('aria-pressed', String(done));
+      label.textContent = done ? 'Completed' : 'Mark lesson complete';
+    };
+    btn.addEventListener('click', () => progress.setComplete(slug, !progress.isComplete(slug)));
+    document.addEventListener(EVENT, sync);
+    sync();
+  }
+
+  const fb = document.querySelector('[data-fd-feedback]');
+  fb?.querySelectorAll<HTMLButtonElement>('button[data-vote]').forEach((b) =>
+    b.addEventListener('click', () => {
+      try {
+        localStorage.setItem(`aerocore.feedback.${currentSlug()}`, b.dataset.vote!);
+      } catch {}
+      fb.querySelectorAll('button').forEach((x) => (x.hidden = true));
+      fb.querySelector<HTMLElement>('.fd-feedback-done')!.hidden = false;
+    }),
+  );
+</script>

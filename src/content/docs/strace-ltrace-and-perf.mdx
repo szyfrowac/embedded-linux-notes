@@ -1,0 +1,90 @@
+---
+title: "strace, ltrace and perf"
+description: "See what a program asks the kernel for, which library calls it makes, and where it spends its CPU time, without changing its code."
+lesson:
+  module: "Performance, debugging and optimization"
+  level: Advanced
+  time: "40 min"
+  needs:
+    - label: "Linux logging and diagnostics"
+      slug: "logging-and-diagnostics"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives items={[
+  "Use strace to find which file or syscall a program fails on",
+  "Summarise where a program spends its system-call time",
+  "Trace library calls with ltrace",
+  "Profile CPU hot spots with perf record and perf report",
+]} />
+
+<Prerequisites
+  knowledge={["What a system call is", "Building a C program for the target"]}
+  software={[`strace, ltrace and perf on the target (Yocto: EXTRA_IMAGE_FEATURES += "tools-debug tools-profile")`]}
+/>
+
+## strace: what the program asks the kernel
+
+Most "it just doesn't work" bugs on a target are a missing file, a wrong permission or a device that does not answer. `strace` shows every system call and its result:
+
+```bash
+strace -f -e trace=openat,connect ./myapp
+```
+
+A typical finding looks like this (illustrative):
+
+```text
+openat(AT_FDCWD, "/etc/myapp.conf", O_RDONLY) = -1 ENOENT (No such file or directory)
+```
+
+`-f` follows child processes and threads. Without `-e`, strace prints everything, which is useful once and overwhelming afterwards.
+
+For timing, summarise instead of listing:
+
+```bash
+strace -c -f ./myapp
+```
+
+The table at the end shows each syscall's count and total time. A program that spends most of its time in `read` with thousands of calls is often reading one byte at a time.
+
+## ltrace: library calls
+
+`ltrace` does the same for calls into shared libraries:
+
+```bash
+ltrace -e malloc+free ./myapp
+```
+
+It is slower than strace and depends on the binary's dynamic linking, so it does not see inside statically linked programs.
+
+:::caution[Tracing changes timing]
+strace and ltrace stop the program at every traced call. A race condition can disappear under tracing, and a real-time loop will miss its deadlines. Use them to find logic errors, not to measure latency.
+:::
+
+## perf: where the CPU time goes
+
+`perf` samples the program counter many times a second and reports which functions were running:
+
+```bash
+perf record -g ./myapp
+perf report --stdio | head -40
+```
+
+`-g` records call graphs so you see who called the hot function. For a running service, attach by PID: `perf record -g -p <pid> -- sleep 10`.
+
+For readable function names, perf needs symbols: build with `-g` and keep the binary unstripped, or point perf at the debug tree with `--symfs`. Some kernels need `CONFIG_PERF_EVENTS` enabled, and on boards without a hardware performance counter driver perf falls back to software timer sampling, which is coarser but still useful.
+
+`perf top` gives a live view, like `top` but for functions.
+
+<Exercise
+  title="Find the slow loop"
+  difficulty="Advanced"
+  instructions="Write a program that reads a 1 MB file one byte at a time with read(), then computes a checksum with a deliberately slow function. Use strace -c to find the syscall problem and perf to find the CPU problem. Fix both and measure again."
+  hints={["Create a test file with: dd if=/dev/urandom of=/tmp/data bs=1M count=1", "Compare 'time ./app' before and after each fix."]}
+  expectedOutcome="strace -c shows about a million read calls before the fix and a handful after. perf report shows the checksum function at the top before you optimise it."
+  verificationSteps={["The read call count drops by orders of magnitude", "The total run time drops measurably"]}
+  solution="Read in blocks (for example 64 KB per read call) instead of one byte at a time. For the CPU part, let perf report tell you which function to fix rather than guessing."
+/>

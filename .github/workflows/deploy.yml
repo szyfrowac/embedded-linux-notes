@@ -1,4 +1,4 @@
-name: Deploy VitePress site to Pages
+name: Deploy site to GitHub Pages
 
 on:
   push:
@@ -28,18 +28,21 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Install dependencies
         run: npm ci
-      - name: Build with VitePress
-        run: npm run docs:build
+      - name: Build with Astro
+        run: npm run build
+        env:
+          # The site is served from https://szyfrowac.github.io/embedded-linux-notes/
+          BASE_PATH: /embedded-linux-notes/
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/.vitepress/dist
+          path: dist
 
   deploy:
     environment:

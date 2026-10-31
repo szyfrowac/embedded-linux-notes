@@ -1,0 +1,122 @@
+---
+title: "Capstone: integrate a custom kernel driver"
+description: "Write a small out-of-tree character driver, describe its device in the device tree, and ship it in your image so it loads at boot."
+lesson:
+  module: "Capstone projects"
+  level: Advanced
+  time: "6–8 hours"
+  needs:
+    - label: "Device trees"
+      slug: "device-trees-dts-dtb-dtc"
+    - label: "Kernel configuration"
+      slug: "kernel-configuration-menuconfig"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+<LearningObjectives items={[
+  "Write a platform driver that binds to a device tree node",
+  "Expose the device to userspace through a misc character device",
+  "Build the module with a Yocto recipe and load it automatically",
+]} />
+
+<Prerequisites
+  knowledge={["C", "Device tree nodes and compatible strings", "Kernel configuration and bbappends"]}
+  software={["A Yocto build for qemuarm or your board"]}
+/>
+
+## Goal
+
+A device tree node with `compatible = "acme,counter"` makes your driver probe. The driver creates `/dev/acme-counter`; every read returns the number of times the device has been read.
+
+## The pieces
+
+```dts
+/ {
+    acme_counter: counter {
+        compatible = "acme,counter";
+        status = "okay";
+    };
+};
+```
+
+The driver skeleton (fill in the read function yourself):
+
+```c
+#include <linux/module.h>
+#include <linux/platform_device.h>
+#include <linux/miscdevice.h>
+#include <linux/fs.h>
+
+static atomic_t reads = ATOMIC_INIT(0);
+
+static ssize_t counter_read(struct file *f, char __user *buf, size_t len, loff_t *off);
+
+static const struct file_operations counter_fops = {
+    .owner = THIS_MODULE,
+    .read  = counter_read,
+};
+
+static struct miscdevice counter_misc = {
+    .minor = MISC_DYNAMIC_MINOR,
+    .name  = "acme-counter",
+    .fops  = &counter_fops,
+};
+
+static int counter_probe(struct platform_device *pdev)
+{
+    return misc_register(&counter_misc);
+}
+
+static void counter_remove(struct platform_device *pdev)
+{
+    misc_deregister(&counter_misc);
+}
+
+static const struct of_device_id counter_of_match[] = {
+    { .compatible = "acme,counter" },
+    { }
+};
+MODULE_DEVICE_TABLE(of, counter_of_match);
+
+static struct platform_driver counter_driver = {
+    .probe  = counter_probe,
+    .remove = counter_remove,
+    .driver = { .name = "acme-counter", .of_match_table = counter_of_match },
+};
+module_platform_driver(counter_driver);
+MODULE_LICENSE("GPL");
+```
+
+:::note[Kernel API versions]
+The `remove` callback returns `void` since Linux 6.11; older kernels expect `int` (or the `remove_new` field during the transition). Match the signature to the kernel version your BSP uses.
+:::
+
+The recipe uses `module.bbclass`, which builds against your image's kernel:
+
+```bitbake
+# recipes-kernel/acme-counter/acme-counter.bb
+SUMMARY = "Acme counter driver"
+LICENSE = "GPL-2.0-only"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/GPL-2.0-only;md5=801f80980d171dd6425610833a22dbe6"
+inherit module
+SRC_URI = "file://Makefile file://acme-counter.c"
+S = "${WORKDIR}"
+KERNEL_MODULE_AUTOLOAD += "acme-counter"
+```
+
+Add the node to your device tree with a bbappend to the kernel recipe, as in [Kernel customization and device tree integration](../kernel-customization-and-device-trees/).
+
+## Milestones
+
+1. Build and load the module by hand with `insmod`; confirm it registers but does not probe without the node.
+2. Add the device tree node; confirm `probe` runs (`dmesg`) and `/dev/acme-counter` appears.
+3. Implement `read` with `copy_to_user` and correct `*off` handling, so `cat` terminates.
+4. Package it in a recipe with `KERNEL_MODULE_AUTOLOAD` and rebuild the image.
+
+## Acceptance checks
+
+- After a fresh boot, `lsmod` lists the module without manual steps.
+- `cat /dev/acme-counter` twice prints 1 then 2.
+- Removing the device tree node means the device file does not appear.

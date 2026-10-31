@@ -1,5 +1,9 @@
 node_modules/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+.astro/
+dist/
 .env
 .DS_Store
+template-previews/
+drafts/

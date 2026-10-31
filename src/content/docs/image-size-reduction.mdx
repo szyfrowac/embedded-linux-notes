@@ -1,0 +1,81 @@
+---
+title: "Root filesystem and image size reduction"
+description: "Find out what makes an image large with buildhistory, then shrink it by removing packages, choosing smaller components and trimming the kernel."
+lesson:
+  module: "Performance, debugging and optimization"
+  level: Advanced
+  time: "35 min"
+  needs:
+    - label: "Custom image recipes and features"
+      slug: "custom-image-recipes-and-features"
+    - label: "Package splitting"
+      slug: "package-splitting-and-installed-vs-shipped"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives items={[
+  "Use buildhistory to list the largest packages in an image",
+  "Find out why a package was pulled in",
+  "Apply the common size reductions in the right order",
+  "Track size changes between builds",
+]} />
+
+<Prerequisites
+  knowledge={["Image recipes and IMAGE_INSTALL", "DEPENDS vs RDEPENDS"]}
+  software={["A Yocto build directory with an image you have built"]}
+/>
+
+## Measure with buildhistory
+
+```bitbake
+# conf/local.conf
+INHERIT += "buildhistory"
+BUILDHISTORY_COMMIT = "1"
+```
+
+Rebuild your image. Then look in `buildhistory/images/<machine>/<libc>/<image>/`:
+
+```bash
+cd buildhistory/images/*/*/core-image-minimal
+sort -k2 -n -r installed-package-sizes.txt | head -15
+```
+
+`installed-package-sizes.txt` lists each package's installed size; `depends.dot` records why each package is there.
+
+## Why is this package here?
+
+```bash
+grep '"python3-core"' depends.dot | head
+```
+
+Each line `"a" -> "b"` means `a` depends on `b`. Follow the chain back to something you added. Often a single convenience package in `IMAGE_INSTALL` pulls in an entire language runtime.
+
+## Reductions, roughly in order of effort
+
+1. **Remove what you do not need.** Check `IMAGE_INSTALL`, `IMAGE_FEATURES` and `DISTRO_FEATURES`. Dropping `x11`, `wayland`, `bluetooth` or `3g` from `DISTRO_FEATURES` removes support from many recipes at once.
+2. **Turn off optional features per recipe** with `PACKAGECONFIG:remove:pn-<recipe>`.
+3. **Stop installing recommendations**: `NO_RECOMMENDATIONS = "1"` in the image recipe skips every `RRECOMMENDS`. Check the image still works afterwards.
+4. **Use smaller components**: BusyBox instead of coreutils and friends, Dropbear instead of OpenSSH, and `TCLIBC = "musl"` instead of glibc if your software builds with it.
+5. **Compress the root filesystem**: `IMAGE_FSTYPES += "squashfs-xz"` for a read-only root.
+6. **Trim the kernel**: start from a minimal defconfig for your SoC and add only what the board uses. Measure with `ls -l` on the kernel image in `tmp/deploy/images/<machine>/`.
+
+:::note[poky-tiny]
+`DISTRO = "poky-tiny"` is a reference distribution that applies many of these choices at once (musl, minimal features, a small kernel). It is a useful lower bound to compare against, even if your product cannot use it directly.
+:::
+
+## Track it
+
+With `BUILDHISTORY_COMMIT = "1"`, every build is a git commit in `buildhistory/`. The `buildhistory-diff` script prints what changed in size and contents since the previous build, which makes size regressions visible in review rather than at release time.
+
+<Exercise
+  title="Shrink core-image-minimal"
+  difficulty="Advanced"
+  instructions="Enable buildhistory and build core-image-minimal. Record its root filesystem size. Apply at least two reductions from the list, rebuild, and use buildhistory-diff to show what changed."
+  hints={["The root filesystem size is in buildhistory/images/.../image-info.txt as IMAGE_ROOTFS_SIZE.", "Run buildhistory-diff from the build directory after the second build."]}
+  expectedOutcome="A smaller root filesystem, and a buildhistory-diff output that lists the removed packages and the size change."
+  verificationSteps={["The image still boots in QEMU", "buildhistory-diff mentions the packages you removed"]}
+  solution="NO_RECOMMENDATIONS and removing unused DISTRO_FEATURES are usually the quickest wins on core-image-minimal. Write down the before and after sizes for each change separately so you know which one mattered."
+/>

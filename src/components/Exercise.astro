@@ -1,0 +1,56 @@
+---
+// Hands-on exercise: task, hints, expected outcome, checks and a hidden solution.
+interface Props {
+  title: string;
+  difficulty?: 'Beginner' | 'Intermediate' | 'Advanced';
+  instructions: string;
+  hint?: string;
+  hints?: string[];
+  expectedOutcome: string;
+  verificationSteps?: string[];
+  solution: string;
+}
+
+const {
+  title,
+  difficulty = 'Intermediate',
+  instructions,
+  hint,
+  hints = [],
+  expectedOutcome,
+  verificationSteps = [],
+  solution,
+} = Astro.props;
+
+const hintList = hints.length > 0 ? hints : hint ? [hint] : [];
+---
+
+<section class="fd-exercise not-content">
+  <div class="fd-exercise-head">
+    <h3>Exercise: {title}</h3>
+    <span class={`fd-tag ${difficulty.toLowerCase()}`}>{difficulty}</span>
+  </div>
+  <p>{instructions}</p>
+  <p class="fd-sub">Expected outcome</p>
+  <p>{expectedOutcome}</p>
+  {
+    verificationSteps.length > 0 && (
+      <>
+        <p class="fd-sub">Check your work</p>
+        <ol>{verificationSteps.map((s) => <li>{s}</li>)}</ol>
+      </>
+    )
+  }
+  {
+    hintList.length > 0 && (
+      <details>
+        <summary>{hintList.length > 1 ? 'Hints' : 'Hint'}</summary>
+        <ul>{hintList.map((h) => <li>{h}</li>)}</ul>
+      </details>
+    )
+  }
+  <details>
+    <summary>Show solution</summary>
+    <pre><code>{solution}</code></pre>
+  </details>
+</section>

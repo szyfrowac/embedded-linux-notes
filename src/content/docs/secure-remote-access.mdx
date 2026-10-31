@@ -1,0 +1,103 @@
+---
+title: "Secure remote access"
+description: "Lock down SSH, close every port you do not need with nftables, and reach devices in the field over a VPN instead of exposing them."
+lesson:
+  module: "Networking and services"
+  level: Advanced
+  time: "35 min"
+  needs:
+    - label: "SSH and remote development"
+      slug: "ssh-and-remote-development"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives items={[
+  "Remove development conveniences that open a device to anyone",
+  "Configure the SSH server for key-only logins",
+  "Write an nftables ruleset that drops everything you did not allow",
+  "Explain why a VPN beats port forwarding for field access",
+]} />
+
+<Prerequisites
+  knowledge={["Key-based SSH logins", "Which services your image runs and on which ports"]}
+  software={["A target with SSH access", "nmap on the host (optional, for checking open ports)"]}
+/>
+
+## Start by removing things
+
+Most remote compromises of embedded devices use something left in from development: an empty root password, a debug shell on a port, a web server nobody remembers enabling. Before writing any firewall rule, list what is listening:
+
+```bash
+netstat -tlnp 2>/dev/null || ss -tlnp
+```
+
+Every line is a door. Remove the package if the product does not need it. Then check the image configuration:
+
+- No `debug-tweaks` or `empty-root-password` in `IMAGE_FEATURES`.
+- Root has a locked password (`passwd -l root`) or logins go through a normal user plus `sudo`.
+- Serial console login is a deliberate decision, documented for service staff.
+
+## SSH: keys only
+
+For OpenSSH, set these in `/etc/ssh/sshd_config` (ship the file from a bbappend):
+
+```text
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin prohibit-password
+```
+
+For Dropbear, pass options instead. `-s` disables password logins and `-g` disables them for root only:
+
+```bash
+# /etc/default/dropbear
+DROPBEAR_EXTRA_ARGS="-s"
+```
+
+:::caution[Test before you lock yourself out]
+Keep one SSH session open while you restart the server with the new settings, and open a second session to confirm a key login still works. If it does not, fix it from the first session.
+:::
+
+## A default-drop firewall with nftables
+
+Allow only what you need, drop the rest:
+
+```text
+#!/usr/sbin/nft -f
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    ct state established,related accept
+    iif lo accept
+    icmp type echo-request accept
+    tcp dport 22 ip saddr 192.168.7.0/24 accept   # SSH from the service LAN only
+  }
+  chain forward { type filter hook forward priority 0; policy drop; }
+  chain output  { type filter hook output priority 0; policy accept; }
+}
+```
+
+Load it with `nft -f /etc/nftables.conf`, and have it load at boot through the `nftables` service from `meta-networking`. Check from the host which ports remain reachable:
+
+```bash
+nmap -Pn 192.168.7.2
+```
+
+## Reaching devices in the field
+
+Forwarding a router port to a device puts its SSH server on the internet. A safer pattern is for the device to dial out to a VPN you control, and for engineers to join the same VPN. WireGuard is small enough for embedded use (it is in the mainline kernel since 5.6, with tools in the `wireguard-tools` recipe). The device needs no open inbound ports at all, and revoking access means removing one public key from the server.
+
+<Exercise
+  title="Close the doors"
+  difficulty="Advanced"
+  instructions="On your QEMU target, list the listening ports, disable password logins over SSH, and load the nftables ruleset above. Confirm from the host with nmap that only port 22 is open and that a password login is refused."
+  hints={["Your QEMU host is 192.168.7.1, so it matches the SSH rule.", "ssh -o PubkeyAuthentication=no root@192.168.7.2 forces a password attempt for testing."]}
+  expectedOutcome="nmap reports 22/tcp open and every other scanned port filtered. The forced password login fails; the key login works."
+  verificationSteps={["nft list ruleset prints your table", "ss -tlnp shows no services you did not expect"]}
+  solution="Remove unneeded services first, then apply the SSH settings and nftables ruleset exactly as shown in the lesson. 'filtered' in nmap means packets were dropped by the firewall, which is what you want for every port except 22."
+/>

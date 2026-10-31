@@ -1,0 +1,43 @@
+---
+// A command, where to run it, its expected output and what it means.
+interface Props {
+  command: string;
+  output?: string;
+  explanation: string;
+  cwd?: string;
+  prompt?: '$' | '#';
+}
+
+const { command, output, explanation, cwd, prompt = '$' } = Astro.props;
+---
+
+<figure class="fd-cmd not-content">
+  <div class="fd-cmd-head">
+    <span>{cwd ? <>Run in <code>{cwd}</code></> : 'Command'}</span>
+    <button type="button" data-fd-copy={command}>Copy</button>
+  </div>
+  <pre><code><span class="fd-prompt" aria-hidden="true">{prompt}</span>{command}</code></pre>
+  {
+    output && (
+      <>
+        <div class="fd-out-label">Expected output (yours may differ)</div>
+        <pre class="fd-out"><code>{output}</code></pre>
+      </>
+    )
+  }
+  <figcaption class="fd-explain">{explanation}</figcaption>
+</figure>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('[data-fd-copy]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(b.dataset.fdCopy!);
+        b.textContent = 'Copied';
+      } catch {
+        b.textContent = 'Select and copy';
+      }
+      setTimeout(() => (b.textContent = 'Copy'), 1500);
+    }),
+  );
+</script>

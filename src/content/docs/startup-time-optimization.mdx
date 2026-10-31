@@ -1,0 +1,101 @@
+---
+title: "Startup-time optimization"
+description: "Measure where boot time goes, from reset to your application, and cut it stage by stage: bootloader, kernel and userspace."
+lesson:
+  module: "Performance, debugging and optimization"
+  level: Advanced
+  time: "40 min"
+  needs:
+    - label: "U-Boot, TFTP and NFS booting"
+      slug: "uboot-tftp-nfs-booting"
+    - label: "Init systems and systemd"
+      slug: "init-systems-and-systemd"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives items={[
+  "Measure boot time per stage before changing anything",
+  "Remove bootloader delays safely",
+  "Find slow kernel initcalls and drivers",
+  "Use systemd-analyze to reorder or defer services",
+]} />
+
+<Prerequisites
+  knowledge={["The boot sequence: ROM, bootloader, kernel, init", "Editing U-Boot environment variables"]}
+  software={["A board or QEMU image you can rebuild", "A serial console, ideally with timestamps (grabserial or a terminal that timestamps lines)"]}
+/>
+
+## Measure first
+
+Boot time is the sum of stages, and each stage has different fixes. Timestamp the serial console from power-on so you can see all of them, including the ones before the kernel prints anything. A typical first measurement (illustrative):
+
+| Stage | Ends when you see | Time |
+|---|---|---|
+| ROM and SPL | U-Boot banner | 0.4 s |
+| U-Boot | `Starting kernel ...` | 3.5 s |
+| Kernel | `Run /sbin/init` | 2.1 s |
+| Userspace | Your application ready | 6.0 s |
+
+Fix the largest stage first, and measure again after each change.
+
+## Bootloader
+
+The most common waste is the autoboot countdown:
+
+```bash
+# U-Boot prompt
+setenv bootdelay 0
+saveenv
+```
+
+With `bootdelay 0` you can still interrupt by holding a key during reset on most configurations; check that on your board before shipping, or you may lock yourself out of the prompt. Also check for slow steps such as probing every storage device or a network boot attempt before the real boot command.
+
+## Kernel
+
+Print each initcall's duration:
+
+```text
+# add to the kernel command line (bootargs)
+initcall_debug printk.time=1
+```
+
+Then sort the slowest:
+
+```bash
+dmesg | grep "initcall" | sort -t'=' -k3 -n -r | head
+```
+
+Typical fixes: build drivers for hardware you do not have out of the kernel, build drivers needed later as modules and load them after the application starts, and add `quiet` to the command line so the kernel does not spend time printing to a slow serial console.
+
+:::caution[quiet hides problems]
+`quiet` lowers the console log level, so a boot failure prints less. Keep it off on development builds.
+:::
+
+## Userspace
+
+On systemd images:
+
+```bash
+systemd-analyze
+systemd-analyze blame | head
+systemd-analyze critical-chain myapp.service
+```
+
+`critical-chain` shows what your application actually waited for. Often it is `network-online.target` or a slow service it does not really need. Fixes, in order of preference:
+
+1. Remove services the product does not use.
+2. Drop unnecessary `After=` and `Wants=` dependencies so things start in parallel.
+3. Start the application early and let non-essential services follow.
+
+<Exercise
+  title="Halve userspace boot time"
+  difficulty="Advanced"
+  instructions="On a systemd image, run systemd-analyze and critical-chain for a service of your own. Remove or defer the two slowest units that your service does not need and measure again."
+  hints={["systemctl mask unit.service prevents a unit from starting at all; use disable when something else may still start it on demand.", "Rebuild the image so the change is permanent, rather than masking units by hand on the target."]}
+  expectedOutcome="systemd-analyze reports a shorter userspace time, and your service appears earlier in critical-chain."
+  verificationSteps={["Your service still starts and works after the change", "systemd-analyze blame no longer lists the removed units"]}
+  solution="Keep a table of before and after numbers for each change. A change that does not move the number is not worth keeping, because every removed dependency is something to re-check when the product changes."
+/>

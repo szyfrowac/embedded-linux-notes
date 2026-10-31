@@ -1,0 +1,101 @@
+---
+title: "Linux logging and diagnostics"
+description: "Find out what a device has been doing: kernel messages, the systemd journal, BusyBox syslog, and the state exposed in /proc and /sys."
+lesson:
+  module: "Performance, debugging and optimization"
+  level: Intermediate
+  time: "30 min"
+  needs:
+    - label: "Init systems and systemd"
+      slug: "init-systems-and-systemd"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives items={[
+  "Read and filter kernel messages with dmesg",
+  "Query the systemd journal by unit, boot and priority",
+  "Keep logs across reboots without wearing out flash",
+  "Use /proc and /sys to check a device's state directly",
+]} />
+
+<Prerequisites
+  knowledge={["Basic shell use on the target", "What a systemd unit is"]}
+  software={["A booted image with a shell (systemd or BusyBox init)"]}
+/>
+
+## Kernel messages
+
+The kernel keeps a ring buffer of its own messages: driver probes, warnings, oopses. Read it with `dmesg`:
+
+```bash
+dmesg | tail -20
+dmesg --level=err,warn      # util-linux dmesg; BusyBox dmesg lacks --level
+dmesg | grep -i -E "error|fail|timeout"
+```
+
+The buffer has a fixed size (set by `CONFIG_LOG_BUF_SHIFT`), so on a busy system early boot messages can be overwritten. Save them early if you need them: `dmesg > /tmp/boot-dmesg.txt` from a start-up script.
+
+Each message has a level from 0 (emergency) to 7 (debug). The console prints only messages more important than the console log level; change it at runtime with `dmesg -n 4`, or at boot with the `loglevel=` kernel argument.
+
+## The systemd journal
+
+On systemd images, `journald` collects kernel messages, service output and syslog calls in one place:
+
+```bash
+journalctl -b                 # this boot
+journalctl -b -1              # previous boot (needs persistent storage)
+journalctl -u status-web      # one service
+journalctl -p warning -b      # warnings and worse, this boot
+journalctl -f                 # follow, like tail -f
+```
+
+## Keeping logs across reboots
+
+By default many embedded images keep the journal in RAM under `/run/log/journal`, so it vanishes at every reboot. Making it persistent costs flash writes. A balanced setting:
+
+```ini
+# /etc/systemd/journald.conf.d/10-persistent.conf
+[Journal]
+Storage=persistent
+SystemMaxUse=16M
+SyncIntervalSec=5min
+```
+
+:::caution[Flash wear]
+Every sync writes to storage. On eMMC or raw NAND, aggressive logging can wear out the part years early. Cap the size, sync rarely, and log to RAM if the product does not need history.
+:::
+
+## BusyBox syslog
+
+Without systemd, BusyBox provides `syslogd` (user-space messages) and `klogd` (forwards kernel messages to syslog). Logs go to `/var/log/messages` by default; `logread` reads them when syslogd runs with an in-memory buffer (`-C`).
+
+```bash
+logger -t myapp "calibration done"
+logread | tail
+```
+
+## Ask the kernel directly
+
+Many questions are answered without any logging at all:
+
+| Question | Where to look |
+|---|---|
+| Memory left? | `/proc/meminfo` |
+| What is using the CPU? | `top`, or `/proc/<pid>/stat` |
+| Which drivers are bound? | `/sys/bus/*/drivers/` |
+| Interrupt counts per CPU | `/proc/interrupts` |
+| Mounted filesystems | `/proc/mounts` |
+| Why did we last reboot? | Board-specific; often a watchdog or reset-cause register in `/sys` |
+
+<Exercise
+  title="Trace a failing service"
+  difficulty="Intermediate"
+  instructions="Write a systemd service whose ExecStart points to a program that does not exist. Start it, then use only journalctl and systemctl to find out why it failed."
+  hints={["systemctl status shows the last few log lines for a unit.", "journalctl -u name -b -p err narrows it down to errors."]}
+  expectedOutcome="You find the 'No such file or directory' message from systemd for your unit and can name the missing path."
+  verificationSteps={["systemctl is-failed name prints failed", "journalctl -u name shows the exit status"]}
+  solution="systemctl status broken.service shows 'status=203/EXEC', which means systemd could not run the ExecStart program. journalctl -u broken.service -b shows the full message including the missing path."
+/>

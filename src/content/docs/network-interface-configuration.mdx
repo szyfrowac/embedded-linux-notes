@@ -1,0 +1,123 @@
+---
+title: "Network interface configuration"
+description: "Bring up Ethernet on an embedded target by hand with iproute2, then make the setup survive a reboot with ifupdown or DHCP."
+lesson:
+  module: "Networking and services"
+  level: Intermediate
+  time: "30 min"
+  needs:
+    - label: "Init systems and systemd"
+      slug: "init-systems-and-systemd"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives items={[
+  "List network interfaces and read their link state with the ip command",
+  "Assign a static IPv4 address and default route by hand",
+  "Get an address from DHCP with BusyBox udhcpc",
+  "Make the configuration persistent with /etc/network/interfaces",
+]} />
+
+<Prerequisites
+  knowledge={["Basic IPv4 addressing: address, netmask, gateway", "How your image starts services at boot"]}
+  software={["A Yocto or Buildroot image booted in QEMU or on a board, with a serial console"]}
+/>
+
+## Why do it by hand first
+
+Every tool that configures networking for you (ifupdown, systemd-networkd, NetworkManager) ends up making the same kernel calls you can make yourself with `ip`. If the automated setup fails on a board you have never seen before, falling back to `ip` on the serial console tells you whether the problem is the driver, the cable or the configuration.
+
+## Look at what the kernel found
+
+```bash
+ip link show
+```
+
+Each interface is listed with its flags. `lo` is the loopback; `eth0` (or `end0`, `enp0s3` and similar on newer kernels) is the Ethernet port. The interesting flags are:
+
+| Flag | Meaning |
+|---|---|
+| `UP` | The interface has been enabled by software. |
+| `LOWER_UP` | The PHY reports a link: a cable is plugged into something that is powered. |
+| `NO-CARRIER` | Enabled, but no link. Check the cable or, in QEMU, the `-netdev` option. |
+
+If `eth0` is missing entirely, the driver did not probe. Check `dmesg | grep -i eth` and the device tree node for the MAC.
+
+## Static address by hand
+
+```bash
+ip link set eth0 up
+ip addr add 192.168.7.2/24 dev eth0
+ip route add default via 192.168.7.1
+echo "nameserver 192.168.7.1" > /etc/resolv.conf
+```
+
+These settings are lost at reboot. That is the point: you can experiment freely and a power cycle undoes any mistake.
+
+:::caution[Example addresses]
+`192.168.7.2` and `192.168.7.1` match the tap network that Yocto's `runqemu` sets up by default. On real hardware use addresses from your own network.
+:::
+
+Check the result:
+
+```bash
+ip addr show eth0
+ping -c 3 192.168.7.1
+```
+
+## Address from DHCP
+
+Most minimal images include BusyBox's DHCP client:
+
+```bash
+udhcpc -i eth0
+```
+
+It requests a lease, then runs a script (usually `/usr/share/udhcpc/default.script`) that applies the address, route and DNS server. If the command waits and prints `Sending discover...` repeatedly, no DHCP server answered.
+
+## Make it persistent with ifupdown
+
+Images that use SysVinit or BusyBox init usually configure networking from `/etc/network/interfaces`, read by `ifup` at boot. In Yocto this file comes from the `init-ifupdown` recipe.
+
+```text
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 192.168.7.2
+    netmask 255.255.255.0
+    gateway 192.168.7.1
+```
+
+For DHCP, replace the `iface eth0` block with `iface eth0 inet dhcp`.
+
+To ship your own version from a layer, add a bbappend and put your file next to it:
+
+```bitbake
+# meta-custom/recipes-core/init-ifupdown/init-ifupdown_%.bbappend
+FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+```
+
+Place the file at `meta-custom/recipes-core/init-ifupdown/files/interfaces`. The [FILESEXTRAPATHS lesson](../filespath-splashscreen-and-bbappends/) explains why this overrides the original.
+
+:::note
+Images built with systemd usually do not use `/etc/network/interfaces`. The [next lesson but one](../networkmanager-and-systemd-networkd/) covers systemd-networkd and NetworkManager.
+:::
+
+<Exercise
+  title="Configure eth0 two ways"
+  difficulty="Intermediate"
+  instructions="Boot your image in QEMU. Configure eth0 by hand with a static address and confirm you can ping the host. Reboot, then make the same configuration persistent through /etc/network/interfaces and confirm it comes up without typing anything."
+  hints={["After editing /etc/network/interfaces you can test without rebooting: ifdown eth0 && ifup eth0", "If ifup reports an unknown interface, check the interface name with ip link."]}
+  expectedOutcome="After a reboot, ip addr show eth0 lists your static address and ping to the host succeeds."
+  verificationSteps={["ip -br addr shows eth0 UP with the expected address", "ip route shows a default route via the gateway", "ping -c 3 to the gateway gets 3 replies"]}
+  solution={`auto eth0
+iface eth0 inet static
+    address 192.168.7.2
+    netmask 255.255.255.0
+    gateway 192.168.7.1`}
+/>

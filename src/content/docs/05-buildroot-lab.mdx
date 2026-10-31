@@ -1,0 +1,239 @@
+---
+title: "05. Hands-On Practical Lab: Building Embedded Linux with Buildroot"
+description: "Step-by-step lab walkthrough: configuring, cross-compiling, flashing, and booting a custom minimal embedded Linux system on STM32MP1."
+lesson:
+  module: "Build systems: Buildroot and Yocto"
+  level: Intermediate
+  time: "45 min"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import CommandBlock from '../../components/CommandBlock.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives outcomes={[
+  "Configure and cross-compile a complete embedded Linux image using Buildroot Makefile automation.",
+  "Deconstruct the generated build artifacts: TF-A, U-Boot, zImage, DTB, and rootfs.ext4.",
+  "Safely flash raw storage block devices using 'dd' and prevent host disk destruction.",
+  "Establish a serial UART console session with picocom to inspect target boot logs and diagnose early kernel panics."
+]} />
+
+<Prerequisites 
+  knowledge={[
+    "Command-line file management and directory navigation",
+    "Basic understanding of partition tables (MBR/GPT) and storage nodes (/dev/sdX, /dev/mmcblkX)"
+  ]}
+  software={[
+    "Ubuntu 22.04 LTS or Debian 12 host environment (native or WSL2)",
+    "git, build-essential, ncurses, picocom"
+  ]}
+  hardware={[
+    "STM32MP157A/D-DK1 Discovery Kit (or QEMU ARM virtual target)",
+    "MicroSD card (8GB+ Class 10) and USB card reader",
+    "Micro-USB cable for ST-LINK UART serial console"
+  ]}
+/>
+
+## Overview: The Buildroot Philosophy
+
+Buildroot is an automated build tool designed to generate custom cross-compilation toolchains, bootloaders, kernel images, and minimal root filesystems through a simple recursive Makefile architecture. Unlike desktop Linux distributions (which install pre-compiled generic binary packages), Buildroot downloads original upstream source code and cross-compiles every single utility specifically optimized for your target processor architecture.
+
+---
+
+## Phase 1: Host System Preparation
+
+Build automation requires an unprivileged Linux host environment. Never execute build systems as `root`.
+
+### Step 1.1: Install Mandatory Host Packages
+
+<CommandBlock
+  command="sudo apt update && sudo apt install -y build-essential libncurses-dev bison flex git rsync unzip bc wget cpio libssl-dev picocom"
+  cwd="user@buildhost:~$"
+  output={`Reading package lists... Done
+Building dependency tree... Done
+0 upgraded, 10 newly installed, 0 to remove.
+Processing triggers for man-db...`}
+  explanation="Installs essential host compilation tools, lexical analyzers (flex/bison), and the ncurses menu configuration library."
+/>
+
+### Step 1.2: Obtain Buildroot Source Code
+
+<CommandBlock
+  command="mkdir -p ~/projects && cd ~/projects && git clone https://git.buildroot.net/buildroot --depth=1 && cd buildroot"
+  cwd="user@buildhost:~/projects$"
+  output={`Cloning into 'buildroot'...
+remote: Enumerating objects: 15420, done.
+remote: Counting objects: 100% (15420/15420), done.
+Resolving deltas: 100% (9840/9840), done.`}
+  explanation="Clones the shallow Buildroot repository tree into your local development workspace."
+/>
+
+---
+
+## Phase 2: Target Configuration
+
+### Step 2.1: Inspect and Apply Board Defconfig
+
+Buildroot provides tested reference board configurations inside `configs/`.
+
+<CommandBlock
+  command="make st_stm32mp157a_dk1_defconfig"
+  cwd="user@buildhost:~/projects/buildroot$"
+  output={`#
+# configuration written to .config
+#`}
+  explanation="Applies the validated hardware profile for the dual-core Cortex-A7 STM32MP157 Discovery Kit."
+/>
+
+### Step 2.2: Customize via Menuconfig
+
+Launch the ncurses graphical menu interface:
+
+```bash
+make menuconfig
+```
+
+Within `menuconfig`, review the key hardware configuration domains:
+- **Target Options:** ARM (little endian), Cortex-A7, NEON/VFPv4 floating point unit.
+- **Toolchain:** GCC version, C library (`glibc` for broad package compatibility, `musl` for minimal size).
+- **Kernel:** Kernel version, in-tree defconfig, and Device Tree source name (`stm32mp157a-dk1`).
+- **Target Packages:** Enable lightweight packages (e.g., `dropbear` for SSH, `htop`, `evtest`, `ethtool`).
+- **Filesystem Images:** Enable `ext4 root filesystem` and generate a `sdcard.img` disk image.
+
+---
+
+## Phase 3: Cross-Compilation & Build Artifacts
+
+Initiate compilation:
+
+```bash
+make
+```
+
+:::tip
+**What Buildroot Automates During `make`:**
+1. Compiles cross-compiler toolchain (`arm-linux-gnueabihf-gcc`) on your host CPU.
+2. Compiles ARM Trusted Firmware (TF-A) and U-Boot bootloader.
+3. Cross-compiles the Linux kernel binary (`zImage`) and compiles DTS into Device Tree Blob (`.dtb`).
+4. Compiles BusyBox and populates the root directory hierarchy (`/bin`, `/etc`, `/lib`, `/usr`).
+5. Executes Genimage to package partitions into a bootable `output/images/sdcard.img`.
+:::
+
+### Inspecting Output Artifacts
+
+<CommandBlock
+  command="ls -lh output/images/"
+  cwd="user@buildhost:~/projects/buildroot$"
+  output={`total 84M
+-rw-r--r-- 1 user user  128K Oct 29 18:20 tf-a-stm32mp157a-dk1.stm32
+-rw-r--r-- 1 user user  920K Oct 29 18:22 u-boot.stm32
+-rw-r--r-- 1 user user   72K Oct 29 18:25 stm32mp157a-dk1.dtb
+-rw-r--r-- 1 user user  6.8M Oct 29 18:25 zImage
+-rw-r--r-- 1 user user   32M Oct 29 18:26 rootfs.ext4
+-rw-r--r-- 1 user user   64M Oct 29 18:26 sdcard.img`}
+  explanation="The entire operating system, bootloader, kernel, and userspace fit within an 84MB footprint."
+/>
+
+---
+
+## Phase 4: Flashing the Storage Image
+
+Insert your MicroSD card and inspect block devices using `lsblk`:
+
+```bash
+lsblk
+```
+
+:::caution
+**PREVENT HOST DISK DESTRUCTION:**
+The `dd` tool writes raw sectors directly to disk. Specifying the wrong target drive (such as `/dev/sda` or `/dev/nvme0n1`) will permanently wipe your host workstation OS!
+Always verify:
+1. The drive capacity matches your MicroSD card (e.g., 14.8G vs 512G).
+2. Write to the **raw disk node** (`/dev/mmcblk0` or `/dev/sdb`), **never** a specific partition (`mmcblk0p1`).
+:::
+
+<CommandBlock
+  command="sudo dd if=output/images/sdcard.img of=/dev/mmcblk0 bs=4M status=progress && sync"
+  cwd="user@buildhost:~/projects/buildroot$"
+  output={`67108864 bytes (67 MB, 64 MiB) copied, 4.12 s, 16.3 MB/s
+16+0 records in
+16+0 records out
+67108864 bytes (67 MB, 64 MiB) copied, 4.58219 s, 14.6 MB/s`}
+  explanation="Transfers the partitioned disk image bit-for-bit to the MicroSD card. The 'sync' command flushes dirty write caches to physical flash."
+/>
+
+---
+
+## Phase 5: Hardware Target Connection & Booting
+
+1. Set board boot switches to MicroSD mode (`BOOT0=1, BOOT2=1`).
+2. Connect a Micro-USB cable from the ST-LINK connector to your host workstation.
+3. Launch `picocom` to establish serial communications:
+
+<CommandBlock
+  command="picocom -b 115200 /dev/ttyACM0"
+  cwd="user@buildhost:~$"
+  output={`port is        : /dev/ttyACM0
+flowcontrol    : none
+baudrate is    : 115200
+parity is      : none
+databits are   : 8
+stopbits are   : 1
+Terminal ready`}
+  explanation="Opens a 115200 baud serial connection to UART4 on the STM32MP1 SoC. Press Ctrl+A followed by Ctrl+X to exit."
+/>
+
+Power cycle the board. Watch the boot sequence proceed from TF-A to U-Boot to Linux kernel initialization:
+
+```
+NOTICE:  CPU: STM32MP157AAC Rev.B
+NOTICE:  Model: STMicroelectronics STM32MP157A-DK1 Discovery Board
+...
+U-Boot 2022.04 (Oct 29 2023 - 18:22:10 +0000)
+Hit any key to stop autoboot:  0 
+## Loading kernel from FIT Image at c2000000 ...
+Starting kernel ...
+
+[    0.000000] Booting Linux on physical CPU 0x0
+[    0.000000] Linux version 6.1.46 (user@buildhost) (arm-buildroot-linux-gnueabihf-gcc)
+...
+[    2.148201] Freeing unused kernel image (initmem) memory: 1024K
+[    2.158120] Run /init as init process
+
+Welcome to Buildroot
+buildroot login: root
+#
+```
+
+---
+
+## Practical Lab Challenge
+
+<Exercise
+  title="Lab 2.1: Add Dropbear SSH and Custom Welcome Message"
+  instructions="Reconfigure Buildroot to include the lightweight Dropbear SSH daemon and customize the system welcome banner displayed upon serial console connection."
+  hints={[
+    "Run 'make menuconfig' and search with '/' for DROPBEAR.",
+    "Look under 'Target packages' -> 'Networking applications' -> 'dropbear'.",
+    "Look under 'System configuration' -> 'System banner' to customize the welcome string."
+  ]}
+  expectedOutcome="After recompiling with 'make', the target image will automatically start the SSH daemon on port 22 and display your custom organization banner upon boot."
+  solution={`# 1. Open configuration
+make menuconfig
+
+# 2. Search for DROPBEAR with '/' and select:
+# Target packages -> Networking applications -> [*] dropbear
+
+# 3. Customize system banner:
+# System configuration -> System banner = "AeroCore Flight Avionics OS v1.0"
+
+# 4. Rebuild the root filesystem (Buildroot handles target repacking automatically):
+make
+
+# 5. Flash updated image:
+sudo dd if=output/images/sdcard.img of=/dev/mmcblk0 bs=4M status=progress && sync`}
+/>
+
+---
+

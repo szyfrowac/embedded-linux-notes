@@ -1,0 +1,56 @@
+---
+title: "Capstone: build a minimal ARM Linux image"
+description: "Produce the smallest image you can that boots an ARM target in QEMU to a shell and runs one program of your own at start-up."
+lesson:
+  module: "Capstone projects"
+  level: Intermediate
+  time: "4–6 hours"
+  needs:
+    - label: "Buildroot lab"
+      slug: "05-buildroot-lab"
+    - label: "Image size reduction"
+      slug: "image-size-reduction"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+<LearningObjectives items={[
+  "Take an image from defconfig to a measured, minimal result",
+  "Explain every package left in the final image",
+  "Start your own program at boot without a full init system",
+]} />
+
+<Prerequisites
+  knowledge={["Modules 1 and 2", "The size-reduction steps from module 7"]}
+  software={["Buildroot (recommended for this project) or Yocto", "qemu-system-arm"]}
+/>
+
+## Goal
+
+Boot `qemu-system-arm -M vexpress-a9` (or `virt`) to a root shell, and have a program you wrote print a line on the console during boot. Then make the image as small as you can while keeping that behaviour.
+
+## Requirements
+
+- Start from `qemu_arm_vexpress_defconfig` in Buildroot, or `MACHINE = "qemuarm"` with `core-image-minimal` in Yocto.
+- Your program is built by the build system from a package or recipe, not copied in by hand.
+- The program starts from an init script (`/etc/init.d/S99hello` with BusyBox init).
+- Keep a table of the root filesystem and kernel sizes after each change.
+
+## Milestones
+
+1. **Baseline.** Build the defconfig unmodified, boot it, record kernel and root filesystem sizes.
+2. **Your program.** Add a package for a hello program and its init script. Confirm the line appears on boot.
+3. **Userspace diet.** Remove every package you cannot justify. Try musl or uClibc-ng instead of glibc.
+4. **Kernel diet.** Disable drivers and features the emulated board does not use. Keep a copy of the working config before each round.
+5. **Write-up.** One page: final sizes, what you removed, what broke along the way and how you found out.
+
+## Acceptance checks
+
+- `qemu-system-arm ... -nographic` reaches a shell prompt with no manual steps.
+- Your program's output appears on the console before the login prompt.
+- The final sizes are smaller than the baseline, and the write-up explains each reduction.
+
+:::tip[Stretch goals]
+Boot from an initramfs built into the kernel, so the whole system is one file. Then measure boot time from QEMU start to your program's output.
+:::

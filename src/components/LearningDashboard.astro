@@ -1,0 +1,287 @@
+---
+// Home dashboard: continue where you left off, overall progress, and the
+// learning path drawn as a route of modules. All data comes from the
+// curriculum file; progress is filled in client-side from the progress store.
+import { modules } from '../data/curriculum.mjs';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const href = (slug: string) => `${base}/${slug}/`;
+const realLessons = (m: (typeof modules)[number]) => m.lessons;
+const total = modules.reduce((n, m) => n + realLessons(m).length, 0);
+const first = modules[0].lessons[0];
+---
+
+<div class="fd-home not-content">
+  <section class="fd-continue" aria-labelledby="fd-continue-h">
+    <div>
+      <h2 id="fd-continue-h" data-fd-continue-label>Start here</h2>
+      <a class="fd-continue-link" href={href(first.slug)} data-fd-continue>{first.label}</a>
+      <p class="fd-continue-note" data-fd-continue-note>The first lesson of module 1. No prior embedded Linux experience needed.</p>
+    </div>
+    <div class="fd-overall">
+      <p><strong data-fd-done-count>0</strong> of {total} lessons completed</p>
+      <div class="fd-bar" role="progressbar" aria-label="Lessons completed" aria-valuemin="0" aria-valuemax={total} aria-valuenow="0" data-fd-bar>
+        <span style="width:0%"></span>
+      </div>
+      <p class="fd-overall-note">Progress is saved in this browser only.</p>
+    </div>
+  </section>
+
+  <section class="fd-recent" aria-labelledby="fd-recent-h" hidden data-fd-recent>
+    <h2 id="fd-recent-h">Recently opened</h2>
+    <ul></ul>
+  </section>
+
+  <section aria-labelledby="fd-route-h">
+    <h2 id="fd-route-h" class="fd-route-title">Learning path</h2>
+    <ol class="fd-route">
+      {
+        modules.map((m, i) => {
+          const lessons = realLessons(m);
+          const planned = lessons.length === 0;
+          return (
+            <li class:list={['fd-wp', { planned }]} data-fd-module={lessons.map((l) => l.slug).join(' ')}>
+              <span class="fd-wp-mark" aria-hidden="true">{m.id === 'cw' ? 'CS' : i + 1}</span>
+              <div class="fd-wp-body">
+                <h3>
+                  <a href={href(m.lessons[0].slug)}>{m.title}</a>
+                </h3>
+                <p>{m.summary}</p>
+                <p class="fd-wp-facts">
+                  <span class={`fd-tag ${m.level.toLowerCase()}`}>{m.level}</span>
+                  <span>{planned ? 'Planned' : `${lessons.length} ${lessons.length === 1 ? 'lesson' : 'lessons'}`}</span>
+                  {!planned && <span class="fd-wp-progress" data-fd-module-progress />}
+                </p>
+              </div>
+            </li>
+          );
+        })
+      }
+    </ol>
+  </section>
+</div>
+
+<script>
+  import { progress, EVENT } from '../scripts/progress';
+
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+  function render() {
+    const p = progress.get();
+    const done = new Set(p.completed);
+
+    const last = p.recent[0];
+    if (last) {
+      document.querySelector('[data-fd-continue-label]')!.textContent = 'Continue learning';
+      const a = document.querySelector<HTMLAnchorElement>('[data-fd-continue]')!;
+      a.href = `${base}/${last.slug}/`;
+      a.textContent = last.title;
+      document.querySelector('[data-fd-continue-note]')!.textContent = 'The lesson you opened most recently.';
+    }
+
+    const recent = document.querySelector<HTMLElement>('[data-fd-recent]')!;
+    if (p.recent.length > 1) {
+      recent.hidden = false;
+      recent.querySelector('ul')!.replaceChildren(
+        ...p.recent.slice(1).map((r) => {
+          const li = document.createElement('li');
+          li.append(Object.assign(document.createElement('a'), { href: `${base}/${r.slug}/`, textContent: r.title }));
+          return li;
+        }),
+      );
+    }
+
+    let count = 0;
+    document.querySelectorAll<HTMLElement>('[data-fd-module]').forEach((li) => {
+      const slugs = li.dataset.fdModule!.split(' ').filter(Boolean);
+      const n = slugs.filter((s) => done.has(s)).length;
+      count += n;
+      const out = li.querySelector('[data-fd-module-progress]');
+      if (out) out.textContent = n > 0 ? `${n} done` : '';
+      li.classList.toggle('complete', slugs.length > 0 && n === slugs.length);
+    });
+    const bar = document.querySelector<HTMLElement>('[data-fd-bar]')!;
+    const total = Number(bar.getAttribute('aria-valuemax'));
+    document.querySelector('[data-fd-done-count]')!.textContent = String(count);
+    bar.setAttribute('aria-valuenow', String(count));
+    bar.querySelector('span')!.style.width = `${(100 * count) / total}%`;
+  }
+
+  render();
+  document.addEventListener(EVENT, render);
+</script>
+
+<style>
+  .fd-home {
+    display: grid;
+    gap: 2.5rem;
+    margin-top: 1.5rem;
+  }
+  .fd-home h2 {
+    margin: 0;
+    font-family: var(--fd-head);
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--sl-color-gray-3);
+  }
+  .fd-continue {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: 1.5rem 2.5rem;
+    padding: 1.4rem 1.6rem;
+    border: 1.5px solid var(--sl-color-white);
+    border-radius: 4px;
+  }
+  .fd-continue-link {
+    display: inline-block;
+    margin-top: 0.2rem;
+    font-family: var(--fd-head);
+    font-size: 1.9rem;
+    font-weight: 600;
+    line-height: 1.15;
+    color: var(--sl-color-accent);
+    text-decoration: none;
+  }
+  .fd-continue-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
+  .fd-continue-note,
+  .fd-overall-note {
+    margin: 0.4rem 0 0;
+    font-size: 0.95rem;
+    color: var(--sl-color-gray-3);
+  }
+  .fd-overall {
+    align-self: center;
+  }
+  .fd-overall p {
+    margin: 0;
+    color: var(--sl-color-gray-1);
+  }
+  .fd-overall strong {
+    font-family: var(--fd-head);
+    font-size: 1.6rem;
+    color: var(--sl-color-white);
+    font-variant-numeric: tabular-nums;
+  }
+  .fd-bar {
+    height: 6px;
+    margin-top: 0.6rem;
+    border-radius: 3px;
+    background: var(--sl-color-gray-5);
+    overflow: hidden;
+  }
+  .fd-bar span {
+    display: block;
+    height: 100%;
+    background: var(--fd-ok);
+  }
+  .fd-recent ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.6rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .fd-recent a {
+    display: block;
+    padding: 0.35rem 0.8rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 4px;
+    text-decoration: none;
+    color: var(--sl-color-gray-1);
+  }
+  .fd-recent a:hover {
+    border-color: var(--sl-color-accent);
+  }
+  .fd-route-title {
+    margin-bottom: 1rem !important;
+  }
+  .fd-route {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .fd-wp {
+    position: relative;
+    display: grid;
+    grid-template-columns: 2.4rem minmax(0, 1fr);
+    gap: 1.1rem;
+    padding-bottom: 1.6rem;
+  }
+  /* The route line joining one waypoint to the next */
+  .fd-wp:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: calc(1.2rem - 1px);
+    top: 2.4rem;
+    bottom: 0;
+    border-left: 2px dashed var(--sl-color-gray-4);
+  }
+  .fd-wp-mark {
+    display: grid;
+    place-items: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border: 2px solid var(--sl-color-accent);
+    border-radius: 50%;
+    background: var(--sl-color-black);
+    font-family: var(--fd-head);
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: var(--sl-color-accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .fd-wp.complete .fd-wp-mark {
+    background: var(--fd-ok);
+    border-color: var(--fd-ok);
+    color: #fff;
+  }
+  .fd-wp.planned .fd-wp-mark {
+    border-style: dashed;
+    border-color: var(--sl-color-gray-4);
+    color: var(--sl-color-gray-3);
+  }
+  .fd-wp-body h3 {
+    margin: 0.35rem 0 0.15rem;
+    font-family: var(--fd-head);
+    font-size: 1.35rem;
+    font-weight: 600;
+  }
+  .fd-wp-body h3 a {
+    color: var(--sl-color-white);
+    text-decoration: none;
+  }
+  .fd-wp-body h3 a:hover {
+    color: var(--sl-color-accent);
+    text-decoration: underline;
+  }
+  .fd-wp-body p {
+    margin: 0;
+    color: var(--sl-color-gray-2);
+    max-width: 42rem;
+  }
+  .fd-wp-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    margin-top: 0.35rem !important;
+    font-size: 0.92rem;
+    color: var(--sl-color-gray-3) !important;
+  }
+  .fd-wp-progress {
+    color: var(--fd-ok);
+    font-weight: 600;
+  }
+  @media (max-width: 50rem) {
+    .fd-continue {
+      grid-template-columns: 1fr;
+      padding: 1.1rem 1.2rem;
+    }
+    .fd-continue-link {
+      font-size: 1.5rem;
+    }
+  }
+</style>

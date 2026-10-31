@@ -1,0 +1,15 @@
+---
+// "What you will learn" panel at the top of a lesson.
+interface Props {
+  items?: string[];
+  outcomes?: string[];
+}
+
+const { items, outcomes } = Astro.props;
+const list = items ?? outcomes ?? [];
+---
+
+<section class="fd-panel not-content" aria-labelledby="what-you-will-learn">
+  <h2 id="what-you-will-learn">What you will learn</h2>
+  <ol>{list.map((o) => <li>{o}</li>)}</ol>
+</section>

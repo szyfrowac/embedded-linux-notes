@@ -1,0 +1,147 @@
+---
+title: "01. Introduction: The Embedded Linux Ecosystem"
+description: "Foundational architecture of Embedded Linux, stack decomposition, and industrial trade-offs."
+lesson:
+  module: "Architecture paradigms and fundamentals"
+  level: Beginner
+  time: "15 min"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import CommandBlock from '../../components/CommandBlock.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives items={[
+  "Deconstruct the four fundamental layers of the Embedded Linux software stack.",
+  "Evaluate why Linux dominates industrial IoT, aerospace edge nodes, and robotics over traditional microcontrollers.",
+  "Analyze the trade-offs between monolithic general-purpose OS designs and resource-constrained embedded targets.",
+  "Distinguish between kernel space memory isolation and userspace POSIX execution models."
+]} />
+
+<Prerequisites 
+  knowledge={[
+    "Basic Linux command-line familiarity (cd, ls, grep, ps)",
+    "Introductory C programming and computer memory hierarchy (RAM, Flash, registers)"
+  ]}
+  software={[
+    "A standard Linux terminal (Ubuntu 22.04 LTS or Debian 12 recommended)"
+  ]}
+/>
+
+## The Evolution of Embedded Systems
+
+Historically, embedded systems were exclusively single-threaded bare-metal firmware or lightweight Real-Time Operating Systems (RTOS) like FreeRTOS or VxWorks running on microcontrollers with tens of kilobytes of SRAM. However, as connectivity requirements expanded—introducing multi-homed TCP/IPv6 stacks, cryptographic handshakes (TLS 1.3), dynamic file systems, graphical displays, and remote over-the-air (OTA) updates—the engineering cost of maintaining bespoke bare-metal stacks exploded.
+
+When stripped of desktop overhead (such as X11/Wayland display servers, power-hungry desktop environments, and non-essential background daemons), Linux transforms into a deterministic, robust, and highly adaptable platform capable of running within 16MB to 64MB of RAM.
+
+In modern engineering, **Linux has become the standard operating system for high-performance embedded devices**, single-board computers (SBCs), and system-on-modules (SoMs).
+
+:::note
+**Why Linux Dominates Embedded Systems:**
+- **Unified Hardware Abstraction:** Device drivers convert hardware registers into uniform file nodes (`/dev`, `/sys`, `/proc`), allowing applications to interact with SPI, I2C, and UART peripherals using standard POSIX `open()`, `read()`, `write()`, and `ioctl()` calls.
+- **Vast Open-Source Ecosystem:** Direct access to battle-tested networking daemons (`dnsmasq`, `hostapd`), database engines (`sqlite3`), web servers (`nginx`), and language runtimes (Python, Rust, Go).
+- **Cross-Architecture Portability:** POSIX-compliant C/C++ code compiles seamlessly across ARMv7-A, ARMv8-A (AArch64), RISC-V (RV64GC), and x86_64 architectures without API refactoring.
+- **Strict Memory Isolation:** The Memory Management Unit (MMU) provides virtual memory spaces for every process, preventing a failing userspace application from corrupting kernel space or crashing adjacent processes.
+:::
+
+---
+
+## The Four Pillars of the Embedded Linux Stack
+
+Every embedded Linux device, regardless of whether it is an automotive dashboard, a drone flight companion computer, or an industrial PLC, consists of four interdependent layers:
+
+```
++--------------------------------------------------------------+
+|                     4. Userspace Applications                |
+|       (Flight Logic, Web Servers, Qt/QML GUI, Telemetry)     |
++--------------------------------------------------------------+
+|                   C Standard Library (glibc / musl)          |
++--------------------------------------------------------------+
+|           System Call Interface (open, read, ioctl, fork)    |
++==============================================================+
+|                      3. Linux Kernel Space                   |
+|  - Process Scheduler & Memory Management (MMU)               |
+|  - Network Stack (TCP/IP, Netfilter)                         |
+|  - Peripheral Drivers (I2C, SPI, CAN, DMA, Ethernet)         |
+|  - Device Tree Board Hardware Representation                 |
++==============================================================+
+|                       2. Bootloader                          |
+|         (U-Boot, Barebox, ARM Trusted Firmware)              |
++--------------------------------------------------------------+
+|                    1. Target Hardware                        |
+|       (SoC: Cortex-A53 / PolarFire RISC-V, DDR4, eMMC)       |
++--------------------------------------------------------------+
+```
+
+### 1. The Target Hardware & Silicon
+The physical silicon, including the central processor core (typically an ARM Cortex-A or RISC-V application core), high-speed system memory (LPDDR4/DDR3), non-volatile storage (NAND Flash, eMMC, or SPI NOR), and on-chip peripherals (UART, SPI, I2C, CAN, USB, Gigabit Ethernet).
+
+### 2. The Bootloader
+Microcontroller bootloaders often do little more than jump to Flash address `0x08000000`. In contrast, an embedded SoC requires a multi-stage boot sequence:
+1. **ROM Code (First Stage Bootloader / FSBL):** Hardwired into silicon ROM, initializes minimal SRAM and clocks, loads secondary bootloader.
+2. **SPL (Secondary Program Loader):** Trains dynamic RAM (DDR timing calibration) and sets up core clock domains.
+3. **U-Boot (Das U-Boot):** Loads the Linux kernel image (`zImage` or `Image.gz`) and the compiled Device Tree Blob (`.dtb`) from eMMC, TFTP network server, or USB into DDR RAM, and transfers control to the kernel.
+
+### 3. The Linux Kernel
+The core operating system executing in privileged CPU mode (EL1 on ARMv8). It owns physical memory, drives peripherals via kernel modules, enforces process scheduling, handles interrupts, and manages virtual filesystem hierarchies.
+
+### 4. The Root Filesystem (Rootfs) & Userspace
+Contains everything needed by userspace:
+- The C runtime library (`glibc` for full desktop compatibility, or `musl` for lean static footprints).
+- Initialization system (`systemd` or `BusyBox init`).
+- System configuration files in `/etc`.
+- Device nodes in `/dev` populated dynamically by `devtmpfs` and `udev`/`mdev`.
+- Custom proprietary application binaries in `/usr/bin` or `/opt`.
+
+---
+
+## Verifying an Embedded Linux System
+
+When logging into an embedded device via serial console (UART) or SSH, engineers use fundamental diagnostics to inspect kernel configuration and memory allocation.
+
+<CommandBlock
+  command="uname -a && cat /proc/version"
+  directory="root@aerocore-target:~#"
+  output={`Linux aerocore-target 6.1.46-v8 #1 SMP PREEMPT Thu Oct 12 14:22:10 UTC 2023 aarch64 GNU/Linux
+Linux version 6.1.46-v8 (oe-user@oe-buildhost) (aarch64-poky-linux-gcc (GCC) 13.2.0) #1 SMP PREEMPT Thu Oct 12 14:22:10 UTC 2023`}
+  explanation="Displays the kernel version, cross-compiler toolchain used during the Yocto build, and target CPU architecture (aarch64 64-bit ARM)."
+/>
+
+<CommandBlock
+  command="free -h && df -h /"
+  directory="root@aerocore-target:~#"
+  output={`               total        used        free      shared  buff/cache   available
+Mem:           512Mi        28Mi       442Mi       1.2Mi        41Mi       480Mi
+Swap:             0B          0B          0B
+
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/root       120M   42M   71M  38% /`}
+  explanation="Confirms an ultra-lean embedded footprint: only 28MB of RAM actively used, with the entire root filesystem consuming just 42MB on Flash storage."
+/>
+
+---
+
+## Practical Lab Challenge
+
+<Exercise
+  title="Lab 1.1: Virtual Embedded System Footprint Analysis"
+  instructions="Analyze the resource footprint of your active terminal or embedded environment. Determine whether the kernel was compiled with PREEMPT (low latency) support and calculate the percentage of memory consumed by userspace."
+  hints={[
+    "Use 'uname -v' or grep for PREEMPT in '/proc/version'.",
+    "Read '/proc/meminfo' to see detailed kernel memory vs active userspace allocations.",
+    "Look at process count using 'ps aux | wc -l'."
+  ]}
+  expectedOutcome="You will obtain the exact kernel compilation timestamp, preemption model, and verify that embedded systems maintain process counts below 40 compared to 200+ on standard desktop Linux."
+  solution={`# 1. Check preemption model
+uname -v | grep -i "preempt"
+
+# 2. Extract total vs free memory
+awk '/MemTotal/ {total=$2} /MemAvailable/ {avail=$2} END {print "Memory Utilization: " ((total-avail)/total)*100 "%"}' /proc/meminfo
+
+# 3. Count running processes
+echo "Total Active Processes: $(ps -ef | wc -l)"`}
+/>
+
+---
+

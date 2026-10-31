@@ -1,0 +1,85 @@
+---
+title: "Capstone: create a custom Yocto distribution"
+description: "Write your own distro layer with its own policy (init system, libc, features, versions) and an image that uses it, instead of building on Poky defaults."
+lesson:
+  module: "Capstone projects"
+  level: Advanced
+  time: "6–8 hours"
+  needs:
+    - label: "BitBake operators and layers"
+      slug: "bitbake-operators-and-layer-creation"
+    - label: "Custom image recipes"
+      slug: "custom-image-recipes-and-features"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+<LearningObjectives items={[
+  "Separate distro policy, machine support and product content into the right layers",
+  "Write a distro configuration file and switch to it",
+  "Pin versions and features so builds are predictable",
+]} />
+
+<Prerequisites
+  knowledge={["Modules 2 and 3"]}
+  software={["A working Poky checkout on an LTS branch", "Enough disk space for a full build (50 GB or more)"]}
+/>
+
+## Goal
+
+Create `meta-acme-distro` containing a distribution called `acme`. Build an image with `DISTRO = "acme"` that differs from Poky in deliberate, documented ways.
+
+## Layer layout
+
+```text
+meta-acme-distro/
+├── conf/
+│   ├── layer.conf
+│   └── distro/
+│       └── acme.conf
+└── recipes-core/
+    └── images/
+        └── acme-image.bb
+```
+
+A starting point for the distro file:
+
+```bitbake
+# conf/distro/acme.conf
+require conf/distro/poky.conf
+
+DISTRO = "acme"
+DISTRO_NAME = "Acme Embedded Linux"
+DISTRO_VERSION = "1.0"
+
+INIT_MANAGER = "systemd"
+DISTRO_FEATURES:remove = "x11 wayland vulkan opengl bluetooth 3g nfc"
+DISTRO_FEATURES:append = " seccomp"
+```
+
+`require conf/distro/poky.conf` keeps Poky's defaults so you only state the differences. Once you understand each setting, you can replace the `require` with your own complete configuration.
+
+## Requirements
+
+- The distro layer contains policy only: no machine configuration and no application recipes.
+- Every difference from Poky is written down with the reason for it.
+- `bitbake-layers show-layers` lists your layer, and `bitbake -e acme-image | grep ^DISTRO=` prints `acme`.
+- The image boots in QEMU.
+
+## Milestones
+
+1. Create the layer with `bitbake-layers create-layer` and add it.
+2. Add `acme.conf` based on Poky, switch `DISTRO`, rebuild, boot.
+3. Change one policy at a time (init manager, removed features, a preferred version with `PREFERRED_VERSION_<recipe>`), rebuilding and booting after each.
+4. Add `acme-image.bb` with the packages your product needs.
+5. Compare `buildhistory` output between Poky and acme and summarise the differences.
+
+## Acceptance checks
+
+- A clean build directory plus your layers produces the same image again.
+- Your write-up explains each change in one sentence.
+
+:::tip[Stretch goal]
+Set `DISTRO_VERSION` from a git tag, and add `/etc/os-release` fields so a running device reports exactly which build it is.
+:::

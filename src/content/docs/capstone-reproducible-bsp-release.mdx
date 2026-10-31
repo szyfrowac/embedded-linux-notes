@@ -1,0 +1,90 @@
+---
+title: "Capstone: produce a reproducible BSP and release image"
+description: "Pin every layer, build from a clean checkout with one command, and publish a release that someone else can rebuild and verify."
+lesson:
+  module: "Capstone projects"
+  level: Advanced
+  time: "6–8 hours"
+  needs:
+    - label: "BSP layers, releases and WIC"
+      slug: "yocto-releases-bsp-layers-wic"
+    - label: "SDKs and package management"
+      slug: "sdk-generation-package-management-licensing"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+<LearningObjectives items={[
+  "Describe a whole build (layers, revisions, configuration) in one versioned file",
+  "Build a release from a clean machine with one command",
+  "Ship the artefacts a customer needs: image, SDK, licences, release notes",
+  "Check that a rebuild produces the same packages",
+]} />
+
+<Prerequisites
+  knowledge={["Modules 2, 3 and 5", "Git tags and branches"]}
+  software={["kas (pip install kas) or the repo tool", "A machine or container you can wipe"]}
+/>
+
+## Goal
+
+Anyone with your project repository and an internet connection can run one command and get the same release image you published.
+
+## Describe the build with kas
+
+```yaml
+# acme.yml
+header:
+  version: 14
+machine: qemuarm64
+distro: poky
+target: core-image-minimal
+repos:
+  poky:
+    url: https://git.yoctoproject.org/poky
+    commit: <full commit hash>
+    layers:
+      meta:
+      meta-poky:
+  meta-openembedded:
+    url: https://git.openembedded.org/meta-openembedded
+    commit: <full commit hash>
+    layers:
+      meta-oe:
+      meta-networking:
+local_conf_header:
+  release: |
+    INHERIT += "buildhistory"
+    BUILDHISTORY_COMMIT = "1"
+```
+
+Pin full commit hashes, not branch names: a branch moves, a hash does not. `kas build acme.yml` clones everything and builds.
+
+:::note[Header version]
+The `header: version` value depends on the kas release you use; check the kas documentation for the version that matches yours.
+:::
+
+## What goes in a release
+
+| Artefact | Where it comes from |
+|---|---|
+| Flashable image (`.wic.xz`) and checksum | `tmp/deploy/images/<machine>/`, `sha256sum` |
+| SDK installer | `bitbake -c populate_sdk <image>` |
+| Licence texts and manifest | `tmp/deploy/licenses/` |
+| Build description | The kas file and the git tag of your project repository |
+| Release notes | Written by you, using `buildhistory-diff` against the previous release |
+
+## Milestones
+
+1. Write the kas file and build from a fresh clone.
+2. Tag the project repository and record the tag in `DISTRO_VERSION` or `/etc/os-release`.
+3. Wipe the build directory (or use a fresh container) and rebuild from the tag.
+4. Compare the two builds: `buildhistory` package lists, and the `reproducible` checks Yocto provides (`oe-selftest -r reproducible` on a supported release).
+5. Assemble the release folder and write the notes.
+
+## Acceptance checks
+
+- A second person, or a fresh container, produces the image with only `git clone` and `kas build`.
+- The package lists of both builds match.
+- The release folder contains every artefact in the table, with checksums.

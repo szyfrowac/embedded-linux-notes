@@ -1,0 +1,121 @@
+---
+title: "Embedded web services"
+description: "Serve a status page and a small JSON API from a device, start it with systemd, and keep its footprint and attack surface small."
+lesson:
+  module: "Networking and services"
+  level: Intermediate
+  time: "35 min"
+  needs:
+    - label: "Init systems and systemd"
+      slug: "init-systems-and-systemd"
+    - label: "Writing C applications"
+      slug: "writing-recipes-and-c-apps"
+---
+
+import LearningObjectives from '../../components/LearningObjectives.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+import Exercise from '../../components/Exercise.astro';
+
+<LearningObjectives items={[
+  "Pick a web server that fits the device's size and job",
+  "Serve dynamic data through CGI without writing a server",
+  "Run the service as an unprivileged user with a systemd unit",
+  "Check what the service exposes from the host",
+]} />
+
+<Prerequisites
+  knowledge={["Writing a recipe that installs files", "systemd service units"]}
+  software={["A systemd image with networking working", "curl on the host"]}
+/>
+
+## Choosing a server
+
+| Server | Approx. size | Good for |
+|---|---|---|
+| BusyBox `httpd` | Already in most images | Static pages and simple CGI scripts |
+| lighttpd | Under 1 MB | Static files, CGI and FastCGI, TLS |
+| nginx | A few MB | Reverse proxy in front of an app, many clients, TLS |
+| Your own program (C, Python, Go) | Varies | A JSON API tightly bound to the device's data |
+
+Start with the smallest option that does the job. A device that shows one status page does not need nginx.
+
+## A status page with BusyBox httpd and CGI
+
+BusyBox `httpd` serves files from a directory and runs anything under `cgi-bin/` as a program, sending its standard output to the client. That is enough for a small JSON API:
+
+```bash
+#!/bin/sh
+# /srv/www/cgi-bin/status
+echo "Content-Type: application/json"
+echo ""
+up=$(cut -d' ' -f1 /proc/uptime)
+load=$(cut -d' ' -f1 /proc/loadavg)
+printf '{"uptime_s": %s, "load1": %s}\n' "$up" "$load"
+```
+
+Make it executable, then test it on the target before involving the network:
+
+```bash
+chmod 755 /srv/www/cgi-bin/status
+httpd -f -p 8080 -h /srv/www &
+wget -qO- http://127.0.0.1:8080/cgi-bin/status
+```
+
+## Run it as a service
+
+```ini
+# /etc/systemd/system/status-web.service
+[Unit]
+Description=Device status page
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/bin/busybox httpd -f -p 8080 -h /srv/www
+User=www
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Port 8080 is above 1024, so the server does not need root. The `Protect*` options make the root filesystem read-only for this process; if your CGI scripts must write somewhere, add `ReadWritePaths=` for that one directory.
+
+In Yocto, create the `www` user with `useradd.bbclass` in the recipe that installs the unit, and enable the unit with `systemd.bbclass` (`SYSTEMD_SERVICE:${PN} = "status-web.service"`).
+
+:::caution[Everything on the network is reachable]
+A service bound to `0.0.0.0` answers on every interface, including one you later connect to the internet. Bind to a specific address (`-p 192.168.7.2:8080`) when the page is only for a maintenance port, and see [Secure remote access](../secure-remote-access/) for firewall rules.
+:::
+
+## Check it from the host
+
+```bash
+curl -s http://192.168.7.2:8080/cgi-bin/status
+```
+
+The output looks like this (your numbers will differ):
+
+```text
+{"uptime_s": 312.47, "load1": 0.08}
+```
+
+<Exercise
+  title="Add a /health endpoint"
+  difficulty="Intermediate"
+  instructions={`Add a second CGI script that returns HTTP 200 with {"ok": true} when /tmp is writable and HTTP 503 otherwise. Package both scripts and the unit in one recipe.`}
+  hints={["A CGI script sets the status code with a 'Status: 503 Service Unavailable' header line before the blank line.", "Use test -w /tmp to check writability."]}
+  expectedOutcome="curl -i to /cgi-bin/health shows 'HTTP/1.1 200 OK' and the JSON body after a fresh boot."
+  verificationSteps={["systemctl status status-web shows active (running)", "ps -o user,comm shows httpd running as www, not root"]}
+  solution={`#!/bin/sh
+if test -w /tmp; then
+  echo "Content-Type: application/json"; echo ""
+  echo '{"ok": true}'
+else
+  echo "Status: 503 Service Unavailable"
+  echo "Content-Type: application/json"; echo ""
+  echo '{"ok": false}'
+fi`}
+/>

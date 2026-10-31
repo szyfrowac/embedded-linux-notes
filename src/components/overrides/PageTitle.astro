@@ -1,0 +1,79 @@
+---
+// Page title plus, for lessons, the lede and the "flight strip" of lesson facts.
+// Lesson facts come from the `lesson` frontmatter (see src/content.config.ts).
+import Default from '@astrojs/starlight/components/PageTitle.astro';
+
+const { data } = Astro.locals.starlightRoute.entry;
+const lesson = data.lesson;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const href = (slug: string) => `${base}/${slug}/`;
+---
+
+<Default />
+{
+  lesson && (
+    <>
+      {data.description && <p class="fd-lede">{data.description}</p>}
+      <dl class="fd-strip not-content">
+        <div>
+          <dt>Module</dt>
+          <dd>{lesson.module}</dd>
+        </div>
+        <div>
+          <dt>Level</dt>
+          <dd class={`fd-level fd-level-${lesson.level.toLowerCase()}`}>{lesson.level}</dd>
+        </div>
+        <div>
+          <dt>Time</dt>
+          <dd>{lesson.time}</dd>
+        </div>
+        {lesson.needs.length > 0 && (
+          <div class="fd-needs">
+            <dt>Needs</dt>
+            <dd>
+              {lesson.needs.map((n, i) => (
+                <>
+                  {i > 0 && ', '}
+                  {n.slug ? <a href={href(n.slug)}>{n.label}</a> : n.label}
+                </>
+              ))}
+            </dd>
+          </div>
+        )}
+        <div>
+          <dt>Status</dt>
+          <dd data-fd-status aria-live="polite">Not started</dd>
+        </div>
+      </dl>
+    </>
+  )
+}
+
+<script>
+  import { progress, currentSlug, EVENT } from '../../scripts/progress';
+
+  function render() {
+    const slug = currentSlug();
+    const p = progress.get();
+    const status = document.querySelector('[data-fd-status]');
+    if (status) {
+      const done = p.completed.includes(slug);
+      const started = (p.checked[slug] ?? []).length > 0;
+      status.textContent = done ? 'Completed' : started ? 'In progress' : 'Not started';
+      status.className = done ? 'is-done' : started ? 'is-started' : '';
+    }
+    // Tick completed lessons in the sidebar.
+    document.querySelectorAll<HTMLAnchorElement>('#starlight__sidebar a[href]').forEach((a) => {
+      const s = new URL(a.href).pathname.replace(/^\/|\/$/g, '');
+      const done = p.completed.some((c) => s === c || s.endsWith('/' + c));
+      a.toggleAttribute('data-fd-done', done);
+    });
+  }
+
+  if (document.querySelector('.fd-strip')) {
+    const h1 = document.querySelector('h1');
+    progress.visit(currentSlug(), h1?.textContent?.trim() ?? document.title);
+  }
+  render();
+  document.addEventListener(EVENT, render);
+</script>

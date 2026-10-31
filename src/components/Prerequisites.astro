@@ -1,0 +1,30 @@
+---
+// "Before you start" panel: knowledge, software and hardware a lesson needs.
+interface Props {
+  items?: string[];
+  knowledge?: string[];
+  software?: string[];
+  hardware?: string[];
+}
+
+const { items, knowledge = [], software = [], hardware = [] } = Astro.props;
+const groups = items
+  ? [{ title: '', list: items }]
+  : [
+      { title: 'Knowledge', list: knowledge },
+      { title: 'Software', list: software },
+      { title: 'Hardware', list: hardware },
+    ].filter((g) => g.list.length > 0);
+---
+
+<section class="fd-panel fd-prereq not-content" aria-labelledby="before-you-start">
+  <p class="fd-panel-title" id="before-you-start">Before you start</p>
+  {
+    groups.map((g) => (
+      <>
+        {g.title && <p class="fd-sub">{g.title}</p>}
+        <ul>{g.list.map((i) => <li>{i}</li>)}</ul>
+      </>
+    ))
+  }
+</section>

@@ -1,0 +1,56 @@
+---
+// Starlight's table of contents, shown as a checklist: a section is ticked
+// once the reader scrolls past its end, and ticks persist per lesson.
+import Default from '@astrojs/starlight/components/TableOfContents.astro';
+---
+
+<Default />
+
+<script>
+  import { progress, currentSlug } from '../../scripts/progress';
+
+  const slug = currentSlug();
+  const links = () =>
+    document.querySelectorAll<HTMLAnchorElement>('starlight-toc a[href^="#"], mobile-starlight-toc a[href^="#"]');
+
+  function paint() {
+    const checked = new Set(progress.checked(slug));
+    links().forEach((a) => {
+      const on = checked.has(a.hash.slice(1));
+      a.toggleAttribute('data-fd-checked', on);
+      let sr = a.querySelector('.sr-only');
+      if (on && !sr) {
+        sr = Object.assign(document.createElement('span'), { className: 'sr-only', textContent: ' (read)' });
+        a.append(sr);
+      } else if (!on && sr) sr.remove();
+    });
+  }
+
+  // Each section ends where the next heading in the list begins.
+  const ids = [...new Set([...links()].map((a) => a.hash.slice(1)))].filter((id) => id !== '_top');
+  const heads = ids.map((id) => document.getElementById(id)).filter(Boolean) as HTMLElement[];
+  const observer = new IntersectionObserver(
+    (entries) => {
+      // A heading entering the top 40% of the viewport closes the section before it.
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const i = heads.indexOf(e.target as HTMLElement);
+        if (i > 0) progress.setChecked(slug, heads[i - 1].id, true);
+      }
+      paint();
+    },
+    { rootMargin: '0px 0px -60% 0px' },
+  );
+  heads.forEach((h) => observer.observe(h));
+  // The last section counts as read at the bottom of the page.
+  const end = document.querySelector('footer');
+  if (end && heads.length) {
+    new IntersectionObserver((es) => {
+      if (es.some((e) => e.isIntersecting)) {
+        progress.setChecked(slug, heads[heads.length - 1].id, true);
+        paint();
+      }
+    }).observe(end);
+  }
+  paint();
+</script>
