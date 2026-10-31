@@ -6,6 +6,8 @@ lesson:
   time: "10 min"
 ---
 
+import Disk from '../../components/diagrams/Disk.astro';
+
 
 <div class="fd-panel">
 
@@ -151,17 +153,27 @@ After a successful build, the following artifacts appear in `tmp/deploy/images/b
 
 The MicroSD card must be partitioned into two distinct regions:
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  Partition 1: BOOT                                               │
-│  Format: FAT32 | Size: 64 MB | Flag: Bootable                   │
-│  Contents: MLO, u-boot.img, zImage, am335x-boneblack.dtb        │
-├──────────────────────────────────────────────────────────────────┤
-│  Partition 2: ROOTFS                                             │
-│  Format: ext4  | Size: Remaining space                           │
-│  Contents: Extracted root filesystem (/, /usr, /etc, /lib, ...)  │
-└──────────────────────────────────────────────────────────────────┘
-```
+<Disk
+  caption="MicroSD layout for the BeagleBone Black: a small FAT32 boot partition, then an ext4 root filesystem filling the rest."
+  rows={[
+  {
+    "parts": [
+      {
+        "name": "1: BOOT",
+        "share": 1,
+        "meta": "FAT32, 64 MB, bootable flag",
+        "contents": "MLO, u-boot.img, zImage, am335x-boneblack.dtb"
+      },
+      {
+        "name": "2: ROOTFS",
+        "share": 2.5,
+        "meta": "ext4, rest of the card",
+        "contents": "Root filesystem: /, /usr, /etc, /lib, ..."
+      }
+    ]
+  }
+]}
+/>
 
 ### Using WIC (Recommended — Automated)
 

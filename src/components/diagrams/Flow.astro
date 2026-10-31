@@ -1,0 +1,55 @@
+---
+// Steps left to right (top to bottom on phones). Consecutive steps with the
+// same `group` share a labelled box. `axis` labels the two ends of a scale.
+interface Step {
+  label: string;
+  group?: string;
+  detail?: string;
+  items?: string[];
+}
+interface Props {
+  steps: Step[];
+  caption: string;
+  mono?: boolean;
+  axis?: [string, string];
+}
+
+const { steps, caption, mono = false, axis } = Astro.props;
+
+const groups: { label?: string; steps: Step[] }[] = [];
+for (const s of steps) {
+  const last = groups.at(-1);
+  if (s.group && last?.label === s.group) last.steps.push(s);
+  else groups.push({ label: s.group, steps: [s] });
+}
+---
+
+<figure class:list={['fd-fig fd-flow not-content', { 'fd-flow-mono': mono }]}>
+  <ol class="fd-flow-list">
+    {
+      groups.map((g) => (
+        <li class:list={['fd-flow-group', { 'fd-flow-boxed': g.label }]}>
+          {g.label && <p class="fd-flow-glabel">{g.label}</p>}
+          <ol>
+            {g.steps.map((s) => (
+              <li class="fd-flow-step">
+                <p class="fd-fig-title">{s.label}</p>
+                {s.detail && <p class="fd-fig-detail">{s.detail}</p>}
+                {s.items && <ul>{s.items.map((i) => <li>{i}</li>)}</ul>}
+              </li>
+            ))}
+          </ol>
+        </li>
+      ))
+    }
+  </ol>
+  {
+    axis && (
+      <p class="fd-flow-axis" aria-hidden="true">
+        <span>{axis[0]}</span>
+        <span>{axis[1]}</span>
+      </p>
+    )
+  }
+  <figcaption>{caption}</figcaption>
+</figure>

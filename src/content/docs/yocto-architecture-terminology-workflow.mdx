@@ -6,6 +6,8 @@ lesson:
   time: "10 min"
 ---
 
+import { FileTree } from '@astrojs/starlight/components';
+
 
 <div class="fd-panel">
 
@@ -62,16 +64,18 @@ The Yocto Project maintains a strict standard for third-party layers. Layers tha
 
 Inspecting the root directory of a cloned Poky repository reveals its internal structure:
 
-```text
-poky/
-├── bitbake/            # BitBake build engine source code & executable
-├── documentation/      # Official Yocto manual & asciidoc/sphinx docs
-├── meta/               # OE-Core metadata (base recipes, classes, conf)
-├── meta-poky/          # Poky distribution metadata
-├── meta-yocto-bsp/     # Hardware BSP recipes for reference boards & QEMU
-├── oe-init-build-env   # Bash initialization script for build environment
-└── scripts/            # Helper scripts (runqemu, bitbake-layers, devtool)
-```
+<FileTree>
+
+- poky/
+  - bitbake/ BitBake build engine source code & executable
+  - documentation/ Official Yocto manual & asciidoc/sphinx docs
+  - meta/ OE-Core metadata (base recipes, classes, conf)
+  - meta-poky/ Poky distribution metadata
+  - meta-yocto-bsp/ Hardware BSP recipes for reference boards & QEMU
+  - oe-init-build-env Bash initialization script for build environment
+  - scripts/ Helper scripts (runqemu, bitbake-layers, devtool)
+
+</FileTree>
 
 ---
 
@@ -79,20 +83,22 @@ poky/
 
 Executing `source oe-init-build-env` creates and enters the `build/` directory, the sandbox where all compilation occurs.
 
-```text
-build/
-├── conf/               # User configuration directory
-│   ├── bblayers.conf   # List of active layer paths parsed by BitBake
-│   └── local.conf      # Local build environment variables
-├── downloads/          # Downloaded upstream source tarballs & git repositories
-├── sstate-cache/       # Shared state cache (speeds up rebuilds across builds)
-└── tmp/                # Temporary build workspace & deploy outputs
-    ├── work/           # Cross-compilation sandbox per recipe
-    └── deploy/
-        ├── images/     # Final binary bootloaders, kernel, dtb & flash images
-        ├── rpm/        # Built RPM package feeds
-        └── ipk/        # Built IPK package feeds
-```
+<FileTree>
+
+- build/
+  - conf/ User configuration directory
+    - bblayers.conf List of active layer paths parsed by BitBake
+    - local.conf Local build environment variables
+  - downloads/ Downloaded upstream source tarballs & git repositories
+  - sstate-cache/ Shared state cache (speeds up rebuilds across builds)
+  - tmp/ Temporary build workspace & deploy outputs
+    - work/ Cross-compilation sandbox per recipe
+    - deploy/
+      - images/ Final binary bootloaders, kernel, dtb & flash images
+      - rpm/ Built RPM package feeds
+      - ipk/ Built IPK package feeds
+
+</FileTree>
 
 ### 3.1 `conf/local.conf` (Environment Variables)
 

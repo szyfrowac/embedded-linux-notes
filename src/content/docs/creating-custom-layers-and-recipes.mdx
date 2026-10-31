@@ -6,6 +6,8 @@ lesson:
   time: "5 min"
 ---
 
+import { FileTree } from '@astrojs/starlight/components';
+
 
 This module covers creating custom Yocto layers from scratch, understanding recipe syntax (`.bb`), managing source checksums, writing `.bbappend` override files, and integrating custom software into your target image.
 
@@ -18,19 +20,21 @@ In Yocto, **never modify core OpenEmbedded or Poky recipes directly**. Upstream 
 ### The Modular Layer Approach
 Instead, encapsulate all custom recipes, patches, hardware configs, and company-specific applications in a separate custom layer (e.g., `meta-custom` or `meta-product`).
 
-```
-meta-custom/
-├── conf/
-│   └── layer.conf          # Layer configuration (priority, dependencies, compatible Yocto versions)
-├── COPYING.MIT             # Layer license
-├── README                  # Layer description
-└── recipes-example/
-    └── myapp/
-        ├── files/          # Patches, source code files, init scripts
-        │   ├── myapp.c
-        │   └── CMakeLists.txt
-        └── myapp_1.0.bb    # Recipe file
-```
+<FileTree>
+
+- meta-custom/
+  - conf/
+    - layer.conf Layer configuration (priority, dependencies, compatible Yocto versions)
+  - COPYING.MIT Layer license
+  - README Layer description
+  - recipes-example/
+    - myapp/
+      - files/ Patches, source code files, init scripts
+        - myapp.c
+        - CMakeLists.txt
+      - myapp_1.0.bb Recipe file
+
+</FileTree>
 
 ---
 

@@ -6,6 +6,8 @@ lesson:
   time: "5 min"
 ---
 
+import { FileTree } from '@astrojs/starlight/components';
+
 
 <div class="fd-panel">
 
@@ -68,17 +70,19 @@ git clone -b kirkstone git://git.yoctoproject.org/meta-ti
 
 Let's examine the structure of `meta-ti`:
 
-```text
-meta-ti/
-├── conf/
-│   ├── machine/              # Hardware definitions (beaglebone, am335x-evm)
-│   └── layer.conf            # Layer priority and dependency definitions
-├── recipes-kernel/
-│   └── linux/                # TI-optimized linux-ti-staging kernel recipes
-├── recipes-bsp/
-│   └── u-boot/               # TI-optimized U-Boot bootloader recipes
-└── recipes-graphics/         # PowerVR GPU drivers (SGX)
-```
+<FileTree>
+
+- meta-ti/
+  - conf/
+    - machine/ Hardware definitions (beaglebone, am335x-evm)
+    - layer.conf Layer priority and dependency definitions
+  - recipes-kernel/
+    - linux/ TI-optimized linux-ti-staging kernel recipes
+  - recipes-bsp/
+    - u-boot/ TI-optimized U-Boot bootloader recipes
+  - recipes-graphics/ PowerVR GPU drivers (SGX)
+
+</FileTree>
 
 ### Step 3: Add the Layer to Your Build
 

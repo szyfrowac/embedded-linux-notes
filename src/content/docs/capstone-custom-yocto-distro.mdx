@@ -14,6 +14,7 @@ lesson:
 
 import LearningObjectives from '../../components/LearningObjectives.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
+import { FileTree } from '@astrojs/starlight/components';
 
 <LearningObjectives items={[
   "Separate distro policy, machine support and product content into the right layers",
@@ -32,16 +33,18 @@ Create `meta-acme-distro` containing a distribution called `acme`. Build an imag
 
 ## Layer layout
 
-```text
-meta-acme-distro/
-├── conf/
-│   ├── layer.conf
-│   └── distro/
-│       └── acme.conf
-└── recipes-core/
-    └── images/
-        └── acme-image.bb
-```
+<FileTree>
+
+- meta-acme-distro/
+  - conf/
+    - layer.conf
+    - distro/
+      - acme.conf
+  - recipes-core/
+    - images/
+      - acme-image.bb
+
+</FileTree>
 
 A starting point for the distro file:
 

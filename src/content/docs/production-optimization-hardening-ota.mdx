@@ -6,6 +6,8 @@ lesson:
   time: "5 min"
 ---
 
+import Disk from '../../components/diagrams/Disk.astro';
+
 
 This module covers optimizing Yocto build speeds using shared state cache (`sstate-cache`) mirrors, configuring read-only root filesystems, hardening security, and implementing Over-the-Air (OTA) software update frameworks for production fleets.
 
@@ -79,18 +81,45 @@ EXTRA_USERS_PARAMS = " \
 
 Deploying firmware updates securely to thousands of remote IoT edge devices requires atomic dual-bank (A/B) update mechanisms.
 
-```
-+-------------------------------------------------------------------------+
-| PARTITION A (Active System Running v1.0)  <-- Currently Executing      |
-| PARTITION B (Inactive System Staging v2.0)<-- OTA Writes Update Binary  |
-+-------------------------------------------------------------------------+
-       │
-       ▼ Reboot & Swap
-+-------------------------------------------------------------------------+
-| PARTITION A (Inactive Legacy System v1.0) <-- Fallback on Failure       |
-| PARTITION B (Active System Running v2.0)  <-- Successfully Booted       |
-+-------------------------------------------------------------------------+
-```
+<Disk
+  caption="A/B updates: the update is written to the inactive slot, and the old slot stays intact as a fallback if the new one fails to boot."
+  rows={[
+  {
+    "label": "During the update",
+    "parts": [
+      {
+        "name": "Slot A",
+        "badge": "Running",
+        "state": "active",
+        "meta": "v1.0, currently executing"
+      },
+      {
+        "name": "Slot B",
+        "badge": "Writing",
+        "state": "writing",
+        "meta": "v2.0, OTA writes the new image"
+      }
+    ]
+  },
+  {
+    "then": "Reboot and swap slots",
+    "label": "After the update",
+    "parts": [
+      {
+        "name": "Slot A",
+        "badge": "Fallback",
+        "meta": "v1.0, kept in case v2.0 fails"
+      },
+      {
+        "name": "Slot B",
+        "badge": "Running",
+        "state": "active",
+        "meta": "v2.0, booted successfully"
+      }
+    ]
+  }
+]}
+/>
 
 ### Popular Open-Source Yocto OTA Frameworks
 - **RAUC (Robust Auto-Update Controller):** Lightweight C-based A/B update framework with `meta-rauc` layer.

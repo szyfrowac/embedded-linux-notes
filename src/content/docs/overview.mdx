@@ -1,0 +1,48 @@
+---
+title: "Embedded Linux Fundamentals & Hands-On Buildroot Guide"
+---
+
+import { FileTree } from '@astrojs/starlight/components';
+
+
+A modular, publication-quality LaTeX document project for teaching **Embedded Linux Fundamentals, Hardware Paradigms, Build Automation Systems, and Target System Deployment**.
+
+---
+
+## Document Artifacts
+
+- **Source repository:** [szyfrowac/embedded-linux-notes](https://github.com/szyfrowac/embedded-linux-notes)
+- **Master LaTeX entry point:** [`latex-src/main.tex`](https://github.com/szyfrowac/embedded-linux-notes/blob/main/latex-src/main.tex)
+- **Preamble and styling:** [`latex-src/preamble.tex`](https://github.com/szyfrowac/embedded-linux-notes/blob/main/latex-src/preamble.tex)
+- **PDF:** run `make pdf` in the repository; it writes `output/embedded_linux_lecture_notes.pdf`.
+
+---
+
+## Modular Subfolder Structure
+
+<FileTree>
+
+- embedded-linux-notes/
+  - Makefile make pdf, make clean
+  - README.md Project documentation and build guide
+  - astro.config.mjs Website configuration (Astro Starlight)
+  - latex-src/ LaTeX sources for the PDF
+    - main.tex Master entry point
+    - preamble.tex Packages, colour palette, custom tcolorboxes
+    - sections/ One file per lecture
+      - 01_introduction.tex The embedded Linux ecosystem
+      - 02_paradigms.tex Bare metal vs RTOS vs Linux vs AMP
+      - 03_applications.tex Industrial uses vs Raspberry Pi
+      - 04_build_methods.tex Image strategies and build systems
+      - 05_buildroot_lab.tex Hands-on Buildroot lab
+      - 06_instructor_notes.tex Teaching notes and exercises
+  - scripts/
+    - generate_tex.py Generates the LaTeX sections
+  - output/
+    - embedded_linux_lecture_notes.pdf Built PDF
+  - src/ Website sources
+    - content/docs/ The lessons on this site
+    - components/ Lesson components and diagrams
+    - styles/ Flight Deck theme
+
+</FileTree>

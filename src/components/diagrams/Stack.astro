@@ -1,0 +1,45 @@
+---
+// Layered stack, top layer first. Zones group layers (user space, kernel
+// space, ...); a zone's `boundary` is drawn as a labelled divider above it.
+type Tone = 'app' | 'kernel' | 'boot' | 'hw';
+interface Layer {
+  title: string;
+  detail?: string;
+  items?: string[];
+}
+interface Zone {
+  label: string;
+  tone: Tone;
+  boundary?: string;
+  layers: Layer[];
+}
+interface Props {
+  zones: Zone[];
+  caption: string;
+}
+
+const { zones, caption } = Astro.props;
+---
+
+<figure class="fd-fig fd-stack not-content">
+  {
+    zones.map((z) => (
+      <>
+        {z.boundary && <p class="fd-stack-boundary">{z.boundary}</p>}
+        <div class={`fd-stack-zone fd-tone-${z.tone}`}>
+          <p class="fd-stack-label">{z.label}</p>
+          <div class="fd-stack-layers">
+            {z.layers.map((l) => (
+              <div class="fd-stack-layer">
+                <p class="fd-fig-title">{l.title}</p>
+                {l.detail && <p class="fd-fig-detail">{l.detail}</p>}
+                {l.items && <ul>{l.items.map((i) => <li>{i}</li>)}</ul>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    ))
+  }
+  <figcaption>{caption}</figcaption>
+</figure>

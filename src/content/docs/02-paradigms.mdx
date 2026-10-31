@@ -11,6 +11,8 @@ import LearningObjectives from '../../components/LearningObjectives.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
 import CommandBlock from '../../components/CommandBlock.astro';
 import Exercise from '../../components/Exercise.astro';
+import Domains from '../../components/diagrams/Domains.astro';
+import Flow from '../../components/diagrams/Flow.astro';
 
 <LearningObjectives outcomes={[
   "Evaluate CPU capability, MMU availability, memory hierarchy, and power budgets across embedded architectures.",
@@ -35,16 +37,44 @@ Architecting an embedded device requires balancing computational throughput, mem
 
 No single architectural paradigm solves all requirements. Embedded engineers select among four primary design paradigms:
 
-```
-+-----------------------------------------------------------------------------------+
-|                            EMBEDDED PARADIGMS SPECTRUM                            |
-|                                                                                   |
-|  [Bare Metal] --------> [RTOS] --------> [PREEMPT_RT Linux] ------> [Hetero AMP]  |
-|   Hard Real-Time       Deterministic       Soft Real-Time            Dual-Domain  |
-|   Zero OS Overhead     Light Scheduler     Full OS Capabilities      RTOS + Linux |
-|   Microsecond Latency  SRAM-friendly       High Throughput           Shared SRAM  |
-+-----------------------------------------------------------------------------------+
-```
+<Flow
+  caption="Four ways to structure embedded software, from the simplest and most predictable to the most capable."
+  axis={["Tighter timing, less software", "Richer software, more layers"]}
+  steps={[
+  {
+    "label": "Bare metal",
+    "detail": "Hard real-time",
+    "items": [
+      "No OS overhead",
+      "Microsecond latency"
+    ]
+  },
+  {
+    "label": "RTOS",
+    "detail": "Deterministic",
+    "items": [
+      "Light scheduler",
+      "Fits in on-chip SRAM"
+    ]
+  },
+  {
+    "label": "PREEMPT_RT Linux",
+    "detail": "Soft real-time",
+    "items": [
+      "Full OS features",
+      "High throughput"
+    ]
+  },
+  {
+    "label": "Heterogeneous AMP",
+    "detail": "Two domains",
+    "items": [
+      "RTOS and Linux side by side",
+      "Shared SRAM between them"
+    ]
+  }
+]}
+/>
 
 ---
 
@@ -93,24 +123,34 @@ High-assurance aerospace, robotics, and industrial automation platforms frequent
 
 Modern heterogeneous SoCs integrate both domains onto a single silicon die:
 
-```
-+-----------------------------------------------------------------------------------+
-|                       HETEROGENEOUS SYSTEM-ON-CHIP (AMP)                          |
-|                                                                                   |
-|  +-------------------------------------+   +------------------------------------+ |
-|  |     Application Cores (SMP)         |   |      Real-Time Core (AMP)          | |
-|  |      ARM Cortex-A53 / RV64          |   |     ARM Cortex-M4 / RV32           | |
-|  |  [ Embedded Linux Userspace ]       |   |  [ NuttX / FreeRTOS / Bare Metal ] | |
-|  |  - Networking (Wi-Fi, 4G, SSH)      |   |  - 1000 Hz Flight Control Loop     | |
-|  |  - Video Streaming / Web Dashboard  |   |  - ESC Motor PWM Generation        | |
-|  |  - High-Level Mission Logic         |   |  - Hard Real-Time Sensor Fusion    | |
-|  +------------------+------------------+   +------------------+-----------------+ |
-|                     |                                         |                   |
-|                     |       Hardware Mailbox / Shared SRAM    |                   |
-|                     +=========================================+                   |
-|                               [ OpenAMP / RPMsg Ring ]                            |
-+-----------------------------------------------------------------------------------+
-```
+<Domains
+  caption="One SoC, two software domains: Linux on the application cores, an RTOS on the real-time core, talking through shared memory."
+  domains={[
+  {
+    "title": "Application cores (SMP)",
+    "cores": "Arm Cortex-A53 or RV64",
+    "os": "Embedded Linux user space",
+    "tone": "app",
+    "items": [
+      "Networking: Wi-Fi, 4G, SSH",
+      "Video streaming and web dashboard",
+      "High-level mission logic"
+    ]
+  },
+  {
+    "title": "Real-time core (AMP)",
+    "cores": "Arm Cortex-M4 or RV32",
+    "os": "NuttX, FreeRTOS or bare metal",
+    "tone": "boot",
+    "items": [
+      "1000 Hz flight control loop",
+      "ESC motor PWM generation",
+      "Hard real-time sensor fusion"
+    ]
+  }
+]}
+  link={{ title: "Hardware mailbox and shared SRAM", detail: "OpenAMP / RPMsg ring buffers" }}
+/>
 
 - **Safety Isolation:** Even if the Linux kernel experiences an Out-Of-Memory (OOM) panic or crash, the real-time core continues running its safety-critical motor control and telemetry loop without interruption.
 - **Inter-Core Communication:** Cores exchange structured packets via shared memory ring buffers synchronized through hardware mailbox interrupts using the standardized `OpenAMP` and `RPMsg` protocols.

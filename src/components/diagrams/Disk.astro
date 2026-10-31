@@ -1,0 +1,47 @@
+---
+// Partition layout drawn as a bar; `share` sets each partition's width.
+// Several rows show the same disk over time, with `then` naming each change.
+interface Part {
+  name: string;
+  share?: number;
+  meta?: string;
+  contents?: string;
+  state?: 'active' | 'idle' | 'writing';
+  badge?: string;
+}
+interface Row {
+  label?: string;
+  then?: string;
+  parts: Part[];
+}
+interface Props {
+  rows: Row[];
+  caption: string;
+}
+
+const { rows, caption } = Astro.props;
+---
+
+<figure class="fd-fig fd-disk not-content">
+  {
+    rows.map((r) => (
+      <>
+        {r.then && <p class="fd-disk-then">{r.then}</p>}
+        {r.label && <p class="fd-disk-label">{r.label}</p>}
+        <div class="fd-disk-bar">
+          {r.parts.map((p) => (
+            <div class={`fd-disk-part fd-state-${p.state ?? 'idle'}`} style={`flex-grow:${p.share ?? 1}`}>
+              <p class="fd-fig-title">
+                {p.name}
+                {p.badge && <span class="fd-disk-badge">{p.badge}</span>}
+              </p>
+              {p.meta && <p class="fd-fig-detail">{p.meta}</p>}
+              {p.contents && <p class="fd-disk-contents">{p.contents}</p>}
+            </div>
+          ))}
+        </div>
+      </>
+    ))
+  }
+  <figcaption>{caption}</figcaption>
+</figure>

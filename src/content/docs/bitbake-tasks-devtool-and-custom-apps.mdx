@@ -6,6 +6,8 @@ lesson:
   time: "5 min"
 ---
 
+import Flow from '../../components/diagrams/Flow.astro';
+
 
 This module explores the internal BitBake task execution pipeline, cleaning/rebuilding recipes, and using `devtool` for rapid iterative software development without full rebuilds.
 
@@ -15,9 +17,44 @@ This module explores the internal BitBake task execution pipeline, cleaning/rebu
 
 Every recipe processed by BitBake runs a series of sequential task methods prefixed with `do_`:
 
-```
-[do_fetch] ──> [do_unpack] ──> [do_patch] ──> [do_configure] ──> [do_compile] ──> [do_install] ──> [do_package] ──> [do_rootfs]
-```
+<Flow
+  mono
+  caption="The tasks BitBake runs for a recipe, in order. Image recipes finish with do_rootfs."
+  steps={[
+  {
+    "label": "do_fetch",
+    "group": "Get the source"
+  },
+  {
+    "label": "do_unpack",
+    "group": "Get the source"
+  },
+  {
+    "label": "do_patch",
+    "group": "Get the source"
+  },
+  {
+    "label": "do_configure",
+    "group": "Build"
+  },
+  {
+    "label": "do_compile",
+    "group": "Build"
+  },
+  {
+    "label": "do_install",
+    "group": "Package"
+  },
+  {
+    "label": "do_package",
+    "group": "Package"
+  },
+  {
+    "label": "do_rootfs",
+    "group": "Image"
+  }
+]}
+/>
 
 ### Key BitBake Task Commands
 
@@ -44,15 +81,13 @@ bitbake recipe-name -c compile -f
 
 Building recipes through `bitbake` during active software development can be slow. The **`devtool` command line tool** simplifies editing source code, building, and deploying directly to a running target hardware board via SSH.
 
-```
-+-------------------------------------------------------------------------+
-| devtool add     : Automatically generates a recipe from Git/source URL  |
-| devtool modify  : Extracts recipe source code for local editing          |
-| devtool build   : Compiles modified code locally in seconds             |
-| devtool deploy  : Installs compiled binaries directly onto live board   |
-| devtool finish  : Generates patches & updates recipe in layer           |
-+-------------------------------------------------------------------------+
-```
+| Command | What it does |
+| :--- | :--- |
+| `devtool add` | Generates a recipe from a Git or source URL |
+| `devtool modify` | Extracts a recipe's source code for local editing |
+| `devtool build` | Compiles the modified code locally in seconds |
+| `devtool deploy-target` | Installs the compiled binaries on the running board |
+| `devtool finish` | Turns your changes into patches and updates the recipe in your layer |
 
 ---
 

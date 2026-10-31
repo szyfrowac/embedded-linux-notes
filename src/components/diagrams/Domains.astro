@@ -1,0 +1,37 @@
+---
+// Side-by-side processing domains joined by a shared link (AMP layouts).
+interface Domain {
+  title: string;
+  cores: string;
+  os: string;
+  tone: 'app' | 'kernel' | 'boot' | 'hw';
+  items: string[];
+}
+interface Props {
+  domains: Domain[];
+  link: { title: string; detail?: string };
+  caption: string;
+}
+
+const { domains, link, caption } = Astro.props;
+---
+
+<figure class="fd-fig fd-domains not-content">
+  <div class="fd-domains-row">
+    {
+      domains.map((d) => (
+        <div class={`fd-domain fd-tone-${d.tone}`}>
+          <p class="fd-fig-title">{d.title}</p>
+          <p class="fd-fig-detail">{d.cores}</p>
+          <p class="fd-domain-os">{d.os}</p>
+          <ul>{d.items.map((i) => <li>{i}</li>)}</ul>
+        </div>
+      ))
+    }
+  </div>
+  <div class="fd-domains-link">
+    <p class="fd-fig-title">{link.title}</p>
+    {link.detail && <p class="fd-fig-detail">{link.detail}</p>}
+  </div>
+  <figcaption>{caption}</figcaption>
+</figure>

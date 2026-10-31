@@ -6,6 +6,8 @@ lesson:
   time: "5 min"
 ---
 
+import Flow from '../../components/diagrams/Flow.astro';
+
 
 This guide outlines a structured, hands-on learning roadmap for teaching juniors how to build custom Embedded Linux systems, write/modify Device Trees (`.dts`/`.dtsi`), and master the Yocto Project targeting **Xilinx Zynq-7000 hardware (ZedBoard, PYNQ-Z1, or PYNQ-Z2)**.
 
@@ -44,9 +46,27 @@ When teaching juniors, recommend these specific video courses and channels organ
 
 Structure your practical labs into 4 sequential phases so students build confidence progressively:
 
-```
-[Phase 1: Linux Boot & DT Basics] ──> [Phase 2: Vivado Hardware Handoff] ──> [Phase 3: Yocto Build System] ──> [Phase 4: FPGA Overlay & DTC]
-```
+<Flow
+  caption="The four training phases, each building on the one before."
+  steps={[
+  {
+    "label": "Phase 1",
+    "detail": "Linux boot and device tree basics"
+  },
+  {
+    "label": "Phase 2",
+    "detail": "Vivado hardware handoff"
+  },
+  {
+    "label": "Phase 3",
+    "detail": "Yocto build system"
+  },
+  {
+    "label": "Phase 4",
+    "detail": "FPGA overlays and DTC"
+  }
+]}
+/>
 
 ### Phase 1: Manual Device Tree Compilation & Inspection
 - **Goal:** Understand hardware description without complex build systems.

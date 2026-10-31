@@ -6,6 +6,8 @@ lesson:
   time: "15 min"
 ---
 
+import { FileTree } from '@astrojs/starlight/components';
+
 
 <div class="fd-panel">
 
@@ -81,20 +83,22 @@ The kernel is configured using **Kconfig** (`make menuconfig`) and compiled for 
 
 The **root filesystem** is the userspace environment that the kernel mounts after boot. It contains:
 
-```
-/
-├── bin/          # Essential system binaries (busybox, sh, ls, mount)
-├── etc/          # System configuration files (network, services, init)
-├── lib/          # Shared libraries (libc.so, libm.so, libpthread.so)
-├── usr/
-│   ├── bin/      # Non-essential user binaries (htop, nano, python3)
-│   └── lib/      # Additional shared libraries
-├── dev/          # Device nodes (dynamically populated by udev/mdev)
-├── proc/         # Virtual filesystem exposing kernel process info
-├── sys/          # Virtual filesystem exposing kernel device model (sysfs)
-├── tmp/          # Temporary file storage (tmpfs)
-└── var/          # Variable data: logs, caches, spool directories
-```
+<FileTree>
+
+- /
+  - bin/ Essential system binaries (busybox, sh, ls, mount)
+  - etc/ System configuration files (network, services, init)
+  - lib/ Shared libraries (libc.so, libm.so, libpthread.so)
+  - usr/
+    - bin/ Non-essential user binaries (htop, nano, python3)
+    - lib/ Additional shared libraries
+  - dev/ Device nodes (dynamically populated by udev/mdev)
+  - proc/ Virtual filesystem exposing kernel process info
+  - sys/ Virtual filesystem exposing kernel device model (sysfs)
+  - tmp/ Temporary file storage (tmpfs)
+  - var/ Variable data: logs, caches, spool directories
+
+</FileTree>
 
 :::note[The 5th element: your application]
 The four elements above form a bootable Linux system, but it does nothing useful by itself. The **5th element** is your custom application stack — whether it's a drone flight controller, an industrial SCADA interface, or a video streaming pipeline. Combined with the core four elements, this forms a complete **Embedded Linux Image**.
