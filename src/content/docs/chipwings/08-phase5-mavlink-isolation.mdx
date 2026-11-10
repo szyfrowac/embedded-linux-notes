@@ -116,6 +116,391 @@ Renode's telnet monitor answers **one connection at a time**; a second connectio
 - The param check uses `COM_DISARM_PRFLT`, because `SYS_AUTOSTART` is now 1100 by default.
 - `perf latency` (99% of callouts within 25 us) is **marginal** with the flight stack running: 98.6-99.3% across runs, so it fails about half the time (issue 1). The threshold was left unchanged on purpose.
 
+## Replicate step by step
+
+Assumes lesson 7 works (PX4 builds and flies SIH alone) and Phase 4 works (RPMsg round trips).
+
+**1. Linux side, kernel options.** Append two blocks to `sw/br2-chipwings/board/mpfs-linux/linux.fragment` and one package line to the defconfig (diffs below), then rebuild:
+
+```sh
+sw/build-linux.sh linux-rebuild all
+```
+
+*Check:* in Linux, `ls /proc/sysrq-trigger` exists.
+
+**2. PX4 side, the tty.** Create `src/rpmsg_tty.c` in the board folder (walkthrough below); add it to the board's `src/CMakeLists.txt`; declare `board_rpmsg_tty_initialize()` in `board_config.h`; call it from `board_rpmsg_initialize()` in `rpmsg.c` before `rptun_boot()`; add `CONFIG_RPMSG_UART=y` to the board's `nuttx-config/nsh/defconfig`.
+
+**3. PX4 side, MAVLink start-up.** Create `init/rc.board_mavlink`, and set the link-loss defaults in `init/rc.board_defaults` (both below).
+
+**4. NuttX patch 0005** in both trees (`sw/patches/` and `sw/px4-patches/nuttx/`; diff below).
+
+**5. Linux side, the MAVLink peer.** Write `examples/linux/mavlink_link.c` and `mavlink_crcs.h`, and add `mavlink_link` to `PROGS` in `examples/linux/Makefile` (diff below). Rebuild the package:
+
+```sh
+sw/build-linux.sh chipwings-examples-rebuild all
+```
+
+**6. Rebuild everything and run:**
+
+```sh
+sw/build-px4.sh                          # clears NuttX objects because the defconfig changed
+sw/build-linux.sh
+sim/phase5/run.sh headless linux
+```
+
+**7. Try the link by hand.** Linux console (`telnet localhost 33458`, `root` / `root`):
+
+```sh
+ls /dev/ttyRPMSG0
+mavlink_link 60 takeoff
+```
+
+Expected end of output:
+
+```text
+mavlink_link: 60 heartbeats, 1500 attitude, 600 position, N acks, about 30000 frames
+mavlink_link: crc errors 0, sequence gaps 0 (0 messages lost)
+mavlink_link: acks: arm 0 takeoff 0, z = -2.50 m after ... s
+mavlink_link: PASS
+```
+
+(the counts are for a 60 s run, the figures we measured: 60 heartbeats, 1500 ATTITUDE at 25 Hz, 600 position messages, 0 CRC errors, 0 sequence gaps).
+
+**8. Run the full suite** (about 15 minutes):
+
+```sh
+sim/phase5/phase5_test.py --linux --flight
+```
+
+## Exact changes, line by line
+
+### 1. The PX4 end of the tty: `src/rpmsg_tty.c`
+
+A NuttX serial device is a `uart_dev_s` plus a table of operations (`uart_ops_s`). We fill in a table whose "wire" is an RPMsg endpoint. Writing `/dev/ttyRPMSG0` sends an RPMsg message; a message from Linux is delivered as received bytes.
+
+```c
+#define RPMSG_TTY_CPU_NAME   "mpfs-ihc"      /* rptun device, see rpmsg.c */
+#define RPMSG_TTY_EPT_NAME   "rpmsg-tty"     /* what Linux's rpmsg_tty matches */
+#define RPMSG_TTY_DEV_PATH   "/dev/ttyRPMSG0"
+#define RPMSG_TTY_LINK_TIMEOUT_S 3
+```
+
+| Name | Meaning |
+|---|---|
+| `RPMSG_TTY_EPT_NAME "rpmsg-tty"` | Linux binds its `rpmsg_tty` driver by this exact endpoint name. Any other name and Linux creates no tty. |
+| `RPMSG_TTY_LINK_TIMEOUT_S 3` | Linux counts as gone after this many seconds without a message. |
+
+```c
+struct rpmsg_tty_priv_s {
+	struct rpmsg_endpoint ept;
+	mutex_t               lock;
+	volatile clock_t      last_rx;    /* tick of the last message from Linux, 0 = none yet */
+	const void           *recv_data;  /* valid only inside the endpoint callback */
+	size_t                recv_len;
+};
+```
+
+`last_rx` is the liveness clock. `recv_data` and `recv_len` hand the endpoint callback's buffer to the serial layer without copying it twice.
+
+**The liveness gate:**
+
+```c
+static bool rpmsg_tty_link_up(struct rpmsg_tty_priv_s *priv)
+{
+	clock_t last = priv->last_rx;
+	return is_rpmsg_ept_ready(&priv->ept) && last != 0 &&
+	       (clock_systime_ticks() - last) < SEC2TICK(RPMSG_TTY_LINK_TIMEOUT_S);
+}
+```
+
+Three conditions: OpenAMP knows Linux's endpoint address (`is_rpmsg_ept_ready`), Linux has spoken at least once (`last != 0`), and it spoke in the last three seconds.
+
+**Flushing, with the gate:**
+
+```c
+static void rpmsg_tty_flush_locked(struct uart_dev_s *dev)
+{
+	if (!rpmsg_tty_link_up(priv)) {
+		if (dev->xmit.head != dev->xmit.tail) {   /* throw the queue away */
+			dev->xmit.tail = dev->xmit.head;
+			uart_datasent(dev);                   /* wake the writer as if it had been sent */
+		}
+		return;
+	}
+	while (dev->xmit.head != dev->xmit.tail) {
+		int tail = dev->xmit.tail;
+		uart_xmitchars_dma(dev);
+		if (dev->xmit.tail == tail) break;        /* nothing handed over (no RPMsg buffer free) */
+	}
+}
+```
+
+When there is nobody to send to, the queued bytes are **discarded** and the writer is released, so PX4's MAVLink thread never blocks. Old telemetry is useless, and keeping it gave Linux a burst plus a sequence gap when it attached.
+
+**Sending one message:**
+
+```c
+static void rpmsg_tty_dmasend(struct uart_dev_s *dev)
+{
+	buf = rpmsg_get_tx_payload_buffer(&priv->ept, &space, false);   /* false = do not block */
+	if (buf == NULL) { xfer->length = xfer->nlength = 0; return; }   /* drop: MAVLink must not stall */
+	if (len > space) len = space;
+	memcpy(buf, xfer->buffer, ...);                                  /* the ring buffer may wrap: 2 parts */
+	if (rpmsg_send_nocopy(&priv->ept, buf, len) < 0) { rpmsg_release_tx_buffer(&priv->ept, buf); ...; return; }
+	xfer->nbytes = len;
+	uart_xmitchars_done(dev);       /* no acknowledgement on the wire: gone as soon as queued */
+}
+```
+
+`rpmsg_get_tx_payload_buffer(..., false)` asks for a shared buffer without waiting; if none is free the bytes are dropped, and MAVLink resynchronises. `memcpy` is done in two parts because the serial transmit ring wraps around.
+
+**Receiving:**
+
+```c
+static int rpmsg_tty_ept_cb(struct rpmsg_endpoint *ept, void *data, size_t len, uint32_t src, void *priv_)
+{
+	priv->last_rx = clock_systime_ticks();       /* Linux is alive, and its address is known now */
+	nxmutex_lock(&dev->recv.lock);
+	priv->recv_data = data;  priv->recv_len = len;
+	uart_recvchars_dma(dev);                     /* serial layer calls dmareceive, which copies */
+	priv->recv_data = NULL;
+	nxmutex_unlock(&dev->recv.lock);
+	return 0;
+}
+```
+
+The first line is what feeds the liveness gate. If the receive buffer is full, the excess is dropped (in `rpmsg_tty_dmareceive`).
+
+**Creating the endpoint when the device appears:**
+
+```c
+static void rpmsg_tty_device_created(struct rpmsg_device *rdev, void *priv_)
+{
+	if (strcmp(RPMSG_TTY_CPU_NAME, rpmsg_get_cpuname(rdev)) == 0) {
+		priv->ept.priv = dev;
+		rpmsg_create_ept(&priv->ept, rdev, RPMSG_TTY_EPT_NAME, RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
+				 rpmsg_tty_ept_cb, NULL);
+	}
+}
+```
+
+When the rpmsg device for `mpfs-ihc` is created, announce an endpoint named `rpmsg-tty`. That announcement (the name service) is what makes Linux create `/dev/ttyRPMSG0`.
+
+**Registration:**
+
+```c
+int board_rpmsg_tty_initialize(void)
+{
+	dev = kmm_zalloc(sizeof(struct uart_dev_s) + sizeof(struct rpmsg_tty_priv_s) + 2 * RPMSG_TTY_BUF_SIZE);
+	dev->ops = &g_rpmsg_tty_ops;
+	dev->recv.size = dev->xmit.size = RPMSG_TTY_BUF_SIZE;      /* 2048 bytes each way */
+	...
+	ret = rpmsg_register_callback(dev, rpmsg_tty_device_created, rpmsg_tty_device_destroy, NULL, NULL);
+	return uart_register(RPMSG_TTY_DEV_PATH, dev);
+}
+```
+
+One allocation holds the device, the private data and both ring buffers. The callback is registered **before** `rptun_boot()` runs (see `rpmsg.c`) so it exists when the rpmsg device appears.
+
+**The stub:**
+
+```c
+void rpmsg_serialinit(void) { }
+```
+
+`CONFIG_RPMSG_UART=y` makes `drivers_initialize()` call `rpmsg_serialinit()`. We set the option only to get the serial DMA support our driver uses (`uart_xmitchars_dma`, `dmasend` and the DMA fields of `uart_dev_s`), so we provide an empty function to satisfy the link. This is a workaround (issue 17); the unused `uart_rpmsg.c` is linked in as a side effect.
+
+### 2. `init/rc.board_mavlink`
+
+```sh
+mavlink start -d /dev/ttyRPMSG0 -b 921600 -r 100000 -m onboard
+mavlink stream -d /dev/ttyRPMSG0 -s ATTITUDE -r 25
+mavlink stream -d /dev/ttyRPMSG0 -s LOCAL_POSITION_NED -r 10
+```
+
+| Option | Meaning |
+|---|---|
+| `-d /dev/ttyRPMSG0` | The device to talk on. |
+| `-b 921600` | Baud rate. It has no meaning on an RPMsg tty (nothing is clocked out); the command is given a value anyway. |
+| `-r 100000` | **Byte budget** per second, not a message rate. At 20,000 B/s the default streams throttled ATTITUDE to 10 Hz (`tx rate mult 0.41`) because the onboard streams need about 36 kB/s. |
+| `-m onboard` | The "onboard" stream set, meant for a companion computer. |
+| `mavlink stream -s ATTITUDE -r 25` | Force ATTITUDE to 25 Hz, LOCAL_POSITION_NED to 10 Hz. |
+
+The file is picked up by PX4's start script because its name starts with `rc.board_`.
+
+### 3. `init/rc.board_defaults` (link loss)
+
+```sh
+# Linux may hang or panic: if its heartbeat stops for 5 s, land on our own.
+param set-default NAV_DLL_ACT 3
+param set-default COM_DL_LOSS_T 5
+```
+
+`NAV_DLL_ACT` is the action on data-link loss (3 = land). `COM_DL_LOSS_T` is how many seconds without a heartbeat count as loss. **Side effect:** with these set, PX4 refuses to arm until it has seen a GCS-type heartbeat, so tests start `mavlink_link` (which sends one) before arming.
+
+### 4. NuttX patch 0005: bounded retry
+
+```diff
+-/* mpfs_rptun_notify() keeps trying for about 10 ms */
++/* mpfs_rptun_notify() keeps trying for about 1 ms: ... */
+-#define MPFS_RPTUN_NOTIFY_RETRIES   1000
++#define MPFS_RPTUN_NOTIFY_RETRIES   100
+ #define MPFS_RPTUN_NOTIFY_DELAY_US  10
+...
+   uint32_t ctrl_reg;
+-  uint32_t retries      = 10000;
+...
+-  /* Check if the system is busy.  All we can try is wait. */
+-
+-  do
+-    {
+-      ctrl_reg = getreg32(MPFS_IHC_CTRL(mhartid, rhartid));
+-    }
+-  while ((ctrl_reg & (RMP_MESSAGE_PRESENT)) && --retries);
++  /* Check if the system is busy. Waiting is the caller's business
++   * (mpfs_rptun_notify() retries with a delay and a bounded budget).
++   */
++
++  ctrl_reg = getreg32(MPFS_IHC_CTRL(mhartid, rhartid));
+```
+
+| Change | Why |
+|---|---|
+| Remove the inner `do ... while` on the control register | `mpfs_ihc_tx_message()` spun up to **10,000** reads waiting for the busy bit, and it was called inside each of 1000 retries. A dead Linux, which never acknowledges, therefore cost 1000 x 10,000 reads, about a second per failed notification on the board, although the comment said 10 ms. Now it reads once and returns "busy". |
+| `RETRIES 1000` to `100` | With a 10 us delay each, 100 tries is about 1 ms: enough for a live Linux to acknowledge the previous kick, short enough that a dead one costs little. |
+
+Effect, measured: the MAVLink thread (NSH's priority) no longer starves the shell for seconds after Linux dies. With Linux frozen, 255 notifications fail in the 3 s before the tty's liveness gate closes, about 1 ms each. After a Linux panic the shell answered in 34 s wall clock instead of 117 s (both at 0.03x speed).
+
+The patch exists twice: `sw/patches/0005-...` for NuttX 13.1, and `sw/px4-patches/nuttx/0005-...` for PX4's fork. The fork copy uses the real path `arch/risc-v/src/mpfs/...`, because in the fork `arch/risc-v/src/chip` is a symlink and git refuses to patch through a symlink.
+
+### 5. Linux options and package
+
+`board/mpfs-linux/linux.fragment`:
+
+```diff
+ CONFIG_BLK_DEV_INITRD=y
++# sysrq trigger (echo c > /proc/sysrq-trigger) for the PX4 isolation test (Phase 5 step 7)
++CONFIG_MAGIC_SYSRQ=y
++CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE=0x1
++# Linux end of the MAVLink link (Phase 5 step 8): /dev/ttyRPMSG0 from the rpmsg-tty endpoint PX4 announces
++CONFIG_RPMSG_TTY=y
+```
+
+| Option | Why |
+|---|---|
+| `MAGIC_SYSRQ` and `_DEFAULT_ENABLE=0x1` | Lets the isolation test crash Linux on purpose with `echo c > /proc/sysrq-trigger`. `0x1` enables all sysrq functions. |
+| `RPMSG_TTY=y` | Built in (not a module), so the tty exists as soon as the `rpmsg-tty` endpoint is announced, with no `modprobe`. |
+
+`configs/chipwings_mpfs_linux_defconfig`:
+
+```diff
++# CPU/cache/memory stress for the PX4 isolation check (Phase 5 step 7)
++BR2_PACKAGE_STRESS_NG=y
+```
+
+`examples/linux/Makefile`:
+
+```diff
+-PROGS = hartcheck rpmsg_ping rpmsg_echo rpmsg_imu
++PROGS = hartcheck rpmsg_ping rpmsg_echo rpmsg_imu mavlink_link
+...
++mavlink_link: mavlink_link.c mavlink_crcs.h
++	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(filter %.c,$^) $(LDLIBS)
+```
+
+The new rule has its own dependencies (the C file and the CRC header) because it does not use the `rpmsg_%` pattern rule: it does not link the RPMsg helper.
+
+### 6. `examples/linux/mavlink_link.c`
+
+A small MAVLink 2 implementation with no library. MAVLink 2 frame layout, as built by `send_msg()`:
+
+```text
+byte 0      0xFD                  start marker
+byte 1      len                   payload length (trailing zero bytes removed)
+byte 2,3    0, 0                  incompat / compat flags
+byte 4      seq                   sequence number (one per sent frame)
+byte 5,6    sysid, compid         sender: 255 / 190 (a GCS)
+byte 7..9   message id (24 bit)
+byte 10..   payload
+last 2      CRC-16/MCRF4XX over bytes 1..end of payload, then one extra byte per message id
+```
+
+```c
+static uint16_t crc_accumulate(uint8_t b, uint16_t crc)
+{
+	uint8_t tmp = b ^ (uint8_t)(crc & 0xff);
+	tmp ^= (tmp << 4);
+	return (crc >> 8) ^ ((uint16_t)tmp << 8) ^ ((uint16_t)tmp << 3) ^ (tmp >> 4);
+}
+static uint16_t crc_calc(const uint8_t *p, size_t n, uint8_t extra)
+{
+	uint16_t crc = 0xffff;
+	while (n--) crc = crc_accumulate(*p++, crc);
+	return crc_accumulate(extra, crc);
+}
+```
+
+The CRC is MAVLink's X.25 CRC. The `extra` byte (CRC_EXTRA) is a per-message-id constant derived from the message definition: it makes sender and receiver agree on the message *layout* as well as its bytes. `mavlink_crcs.h` is the table id to CRC_EXTRA for the common dialect, **generated from PX4's own `mavlink/common/common.h`** (`MAVLINK_MESSAGE_CRCS`), so the Linux program can check every message PX4 streams without a MAVLink library. `crc_extra()` looks the id up with a binary search.
+
+```c
+static void send_heartbeat(int fd)
+{
+	uint8_t p[9] = { 0 };
+	p[4] = 6;  /* MAV_TYPE_GCS */
+	p[5] = 8;  /* MAV_AUTOPILOT_INVALID */
+	p[8] = 3;  /* MAVLink version */
+	send_msg(fd, MSG_HEARTBEAT, p, sizeof(p));
+}
+```
+
+A HEARTBEAT that says "I am a ground-control station". Two things depend on it: PX4's link-loss logic wants a GCS-type heartbeat, and it is the first message Linux sends, which is what lets OpenAMP learn Linux's endpoint address.
+
+```c
+static void send_command(int fd, uint16_t cmd, float p1, float p7)
+{
+	uint8_t p[33] = { 0 };
+	float params[7] = { p1, 0, 0, NAN, 0, 0, p7 };
+	memcpy(p, params, sizeof(params));
+	memcpy(p + 28, &cmd, 2);
+	p[30] = PX4_SYSID;
+	p[31] = 1;       /* MAV_COMP_ID_AUTOPILOT1 */
+	send_msg(fd, MSG_COMMAND_LONG, p, sizeof(p));
+}
+```
+
+COMMAND_LONG: seven float parameters, then the command id at byte 28, target system (1) and target component (1). `CMD 400` arms (parameter 1 = 1); `CMD 22` is take-off.
+
+```c
+fd = open(DEV, O_RDWR | O_NOCTTY);
+tcgetattr(fd, &t);  cfmakeraw(&t);  tcsetattr(fd, TCSANOW, &t);
+```
+
+Open the tty and switch it to raw mode: no line editing, no echo, no newline translation. Without it, MAVLink bytes (including `0x0D` and `0x0A`) would be altered by the line discipline and the CRC would fail.
+
+The main loop sends a heartbeat every second; once PX4's heartbeat has been heard and at least 5 s have passed it sends the arm command, 3 s later it sends take-off, and parses everything it receives (`select` with a 100 ms timeout). At the end it prints counts and decides PASS or FAIL: about one heartbeat per second, ATTITUDE received, no CRC errors and no sequence gaps (a gap means PX4's sequence number jumped, so a message was lost), and, with `takeoff`, both acks equal 0 and z better than -2.0 m.
+
+### 7. The test harness details
+
+**Freezing Linux** (`phase5_test.py`, `freeze_linux`):
+
+```python
+if args.target == "renode":
+    mon = Monitor(args.monitor)
+    try:
+        for h in (2, 3, 4):
+            mon.cmd(f"sysbus.u54_{h} IsHalted true")
+        halted = [re.search(r"\bTrue\b", mon.cmd(f"sysbus.u54_{h} IsHalted")) is not None for h in (2, 3, 4)]
+    finally:
+        mon.close()
+    return "harts 2-4 halted", all(halted)
+lx._send(b"echo c > /proc/sysrq-trigger\r")        # board: crash it
+return "sysrq panic", True
+```
+
+On Renode the test halts harts 2-4 through the monitor, **reads `IsHalted` back** and fails with "Linux is really gone" if it did not take. `mon.close()` is in a `finally` block because Renode's monitor handles one connection at a time: a socket left open makes the next command silently do nothing, which is exactly the bug we had. On the board the same test crashes Linux with sysrq.
+
+**`isolation_test.py`** (Renode only) does: log in to Linux and start `mavlink_link` (PX4 will not arm without a heartbeat), arm and take off, record a latency baseline (`perf reset`, hover, `perf latency`), run `stress-ng --cpu 3 --vm 2` on the Linux harts and compare, then `echo c > /proc/sysrq-trigger` and check PX4 is still hovering or landing under its own failsafe.
+
 ## Files
 
 | File | Change | Reason |

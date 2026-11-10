@@ -125,6 +125,391 @@ EKF2 at 100 Hz (average 1.25 ms per update, attitude, local and global position 
 
 Expected noise in the log: "command not found" for modules we did not build (tone_alarm, rgbled, px4io, rc_input), `UAVCAN_ENABLE` and `GPS_1_CONFIG` not found, `param 65535 invalid`.
 
+## Replicate step by step
+
+**1. Check the environment** (setup lesson, step 3: PX4 at `5f429033`, submodules, `sw/px4-venv`):
+
+```sh
+sw/build-px4.sh --toolchain
+```
+
+Expected: the `readelf` lines show `Class: ELF64`, `Machine: RISC-V`, a double-float ABI flag; then `cmake ..., ninja ..., Python ...` and `venv: PX4 Python modules import`.
+
+**2. Create the out-of-tree port folders** (nothing inside `sw/px4/` is edited by hand):
+
+```sh
+mkdir -p sw/px4-chipwings/platforms/nuttx/src/px4/microchip/{microchip_common/{hrt,version,board_reset,board_critmon,include/px4_arch},mpfs/include/px4_arch}
+mkdir -p sw/px4-chipwings/boards/chipwings/mpfs-hart1/{src,init,nuttx-config/{nsh,scripts,include}}
+```
+
+Use PX4's STM32 port as the model, file for file: `platforms/nuttx/src/px4/stm/stm32_common/` becomes `microchip/microchip_common/`, `stm32h7` becomes `mpfs`, and `boards/px4/fmu-v6x/` becomes `boards/chipwings/mpfs-hart1/`. Read the STM32 file, keep its structure and replace the chip-specific register code with MPFS equivalents (the next section shows what ours replaced).
+
+**3. Write the six PX4 patches and three NuttX-fork patches** in `sw/px4-patches/` and `sw/px4-patches/nuttx/` (diffs below). Make each patch against a clean tree with `git -C sw/px4 diff > sw/px4-patches/NNNN-name.patch`, then `git -C sw/px4 checkout .` so that `build-px4.sh` applies it.
+
+**4. Build:**
+
+```sh
+sw/build-px4.sh
+```
+
+Expected end: `Built chipwings_mpfs-hart1_default: .../sw/out/px4/chipwings_mpfs-hart1_default.elf` and a `size` line (about 1.5 MB of code with the flight modules).
+
+**5. Run and test:**
+
+```sh
+sim/phase5/run.sh headless          # PX4 alone; NSH on telnet localhost 33457
+sim/phase5/phase5_test.py           # 13/13
+```
+
+In NSH, `ver all` should print `CHIPWINGS_MPFS_HART1`, an RV64 architecture and the UUID `chipwings-renode`; `dmesg` shows `[arch_hrt] MSS Timer 1 at 100 MHz`.
+
+**6. SIH closed loop:**
+
+```sh
+# in the PX4 shell (telnet localhost 33457)
+commander arm
+commander takeoff
+listener vehicle_local_position 1     # z about -2.5 after a few seconds
+```
+
+## Exact changes, line by line
+
+### 1. `sw/build-px4.sh` in full, explained
+
+```sh
+SHIM=$SW/out/px4-toolchain
+mkdir -p "$SHIM"
+for tool in "$TOOLCHAIN"/riscv-none-elf-*; do
+  name=riscv64-unknown-elf-${tool##*/riscv-none-elf-}
+  printf '#!/bin/sh\nexec "%s" "$@"\n' "$tool" > "$SHIM/$name"
+  chmod +x "$SHIM/$name"
+done
+export PATH=$SHIM:$VENV/bin:/usr/bin:$PATH
+```
+
+PX4's CMake toolchain file hard-codes the compiler prefix `riscv64-unknown-elf-`; ours is `riscv-none-elf-`. For every tool the loop writes a **wrapper script** named with PX4's prefix that runs ours. Wrappers rather than symlinks, because GCC finds `cc1`, `collect2` and the multilib libraries relative to the path it was started from, and through a symlink that is the wrong place. The `PATH` order is shim, venv, then `/usr/bin` before everything else, so Vivado's bundled `ninja` is not used.
+
+```sh
+cp -r "$SW/px4-chipwings/." "$SW/px4/"
+```
+
+Overlay our files onto the PX4 tree. They are all new files, so the copy is idempotent.
+
+```sh
+new_sum=$(cat "$SW"/px4/boards/*/*/nuttx-config/*/defconfig 2>/dev/null | sha256sum | cut -d' ' -f1)
+if [ "$(cat "$DEFCONFIG_STAMP" 2>/dev/null)" != "$new_sum" ]; then
+  find "$NUTTX_TREE/nuttx" "$NUTTX_TREE/apps" -name '*.o' -delete
+  echo "$new_sum" > "$DEFCONFIG_STAMP"
+fi
+```
+
+NuttX's build does not track its configuration. After a defconfig change only files whose *source* changed are rebuilt, so objects built under the old configuration (struct layouts depend on `CONFIG_*`) are linked with new ones. We hit this: after enabling serial DMA, `uart_open` jumped through a NULL function pointer because `drivers/serial.o` still had the old `uart_dev_s` layout. The script hashes all board defconfigs and deletes every NuttX object when the hash changes.
+
+```sh
+for p in "$SW"/px4-patches/*.patch; do apply_once "$SW/px4" "$p"; done
+for p in "$SW"/patches/0002-*.patch "$SW"/px4-patches/nuttx/*.patch; do
+  apply_once "$SW/px4/platforms/nuttx/NuttX/nuttx" "$p"
+done
+make -C "$SW/px4" "$TARGET"
+cp "$ELF" "$SW/out/px4/"
+```
+
+The six PX4 patches go to the PX4 repo; then to the NuttX fork go `sw/patches/0002` (the resource table) and `sw/px4-patches/nuttx/*` (the IHC fixes). `sw/patches/0001` is **deliberately not applied** to the fork. Then PX4's own `make`.
+
+### 2. The six PX4 patches
+
+**0001: detect the chip** (`platforms/nuttx/cmake/px4_impl_os.cmake`)
+
+```diff
+ 	elseif(CONFIG_ARCH_CHIP_ESP32)
+ 		set(CHIP_MANUFACTURER "espressif")
+ 		set(CHIP "esp32")
++	elseif(CONFIG_ARCH_CHIP_MPFS)
++		set(CHIP_MANUFACTURER "microchip")
++		set(CHIP "mpfs")
+ 	else()
+ 		message(FATAL_ERROR "Could not determine chip architecture from NuttX config. You may have to add it.")
+```
+
+PX4 derives the folder `platforms/nuttx/src/px4/<manufacturer>/<chip>` from the NuttX configuration. Without this branch CMake stops with the `FATAL_ERROR` shown. With it, the build looks in `microchip/mpfs/` and `microchip/microchip_common/`, which are our folders.
+
+**0002: SoC id** (`platforms/common/include/px4_platform_common/board_common.h`)
+
+```diff
+ 	PX4_SOC_ARCH_ID_NXPIMXRT1176   =  0x0009,
++	PX4_SOC_ARCH_ID_MPFS           =  0x000A,
+```
+
+Every supported chip family has an id that PX4 reports in `ver`. `board_identity.c` uses `PX4_SOC_ARCH_ID`. We took the next free number.
+
+**0003: a missing dependency** (`src/lib/controllib/controllib_test/CMakeLists.txt`)
+
+```diff
+ 	DEPENDS
++		controllib
+ 	)
++
++# equal() comes from mathlib, which is configured after src/lib/controllib
++target_link_libraries(lib__controllib__controllib_test PRIVATE mathlib)
+```
+
+The test module uses functions from `controllib` and `mathlib` but never declared them. On the STM32 boards another module that is in the build pulls them in, so it links by accident. In our smaller build nothing does, and the link failed with undefined references.
+
+**0004: `param load-or-init` with no storage** (`src/systemcmds/param/param.cpp`)
+
+```diff
+-	if (backup_file_name) {
++	/* rcS passes an empty $PARAM_BACKUP_FILE on boards without storage; NuttX
++	 * fails open("") with ENXIO, not ENOENT, so treat it as no backup */
++	if (backup_file_name && backup_file_name[0] != '\0') {
+ 		fd = open(backup_file_name, O_RDONLY);
+```
+
+PX4's start script calls `param load-or-init` with a backup file name. Our board has none, so the argument is an empty string, not a null pointer. NuttX's `open("")` returns `ENXIO`, but the code only tolerates `ENOENT` (file not found) and treated anything else as an error, which broke parameter set-up.
+
+**0005: build and link OpenAMP** (`platforms/nuttx/CMakeLists.txt`, `platforms/nuttx/NuttX/CMakeLists.txt`)
+
+```diff
++# RPMsg (rptun) on top of OpenAMP and libmetal
++if(CONFIG_OPENAMP)
++	list(APPEND nuttx_libs nuttx_openamp)
++	target_link_libraries(nuttx_drivers INTERFACE nuttx_openamp)
++	target_link_libraries(nuttx_arch INTERFACE nuttx_openamp)
++	# and libmetal translates addresses with up_addrenv_*() (drivers/misc/addrenv.c)
++	target_link_libraries(nuttx_openamp INTERFACE nuttx_drivers)
++endif()
+...
++if(CONFIG_OPENAMP)
++	add_nuttx_dir(openamp openamp y -D__KERNEL__ all)
++endif()
+```
+
+PX4 builds the NuttX directories it needs one by one (`add_nuttx_dir`) and never had an `openamp` entry, because no PX4 board used RPMsg. The second hunk builds the directory when `CONFIG_OPENAMP` is set. The first adds the library to the link and, because static-library order matters, makes `nuttx_drivers` and `nuttx_arch` depend on it (they call OpenAMP) and OpenAMP depend back on the drivers (libmetal calls `up_addrenv_*`).
+
+**0006: task stacks on 64-bit** (`platforms/nuttx/src/px4/common/tasks.cpp`)
+
+```diff
+ int px4_task_spawn_cmd(const char *name, int scheduler, int priority, int stack_size, ...)
+ {
+ 	sched_lock();
++
++	// Stack sizes in the modules are tuned for 32-bit ARM. With 8-byte pointers and registers the same
++	// call chains need about twice the stack (PX4's POSIX layer does the same, see PX4_STACK_ADJUSTED).
++	// An undersized stack here silently corrupts the heap next to it.
++	stack_size *= (__SIZEOF_POINTER__ >> 2);
+```
+
+`__SIZEOF_POINTER__ >> 2` is 1 on a 32-bit target and 2 on RV64, so the stack size doubles only on 64-bit. Why a stack bug showed up as a heap assertion: NuttX allocates task stacks from the heap, so a stack that overflows writes into the neighbouring heap block. The first symptom was `mm_mallinfo.c:72` (free-list check) in `wq:lp_default`, nowhere near the cause. The clue was that `sih` asks for 1560 bytes and `top` showed that task at 100% stack use.
+
+### 3. Chip layer: the pieces and what each replaced
+
+**Time and deadlines** (`microchip_common/hrt/hrt.c`). On STM32 one timer gives both the current time and the next deadline. The PolarFire SoC has no MSS timer with a compare channel, so we split the jobs:
+
+```c
+#define rMTIME  (*(volatile uint64_t *)MPFS_CLINT_MTIME)
+
+hrt_abstime hrt_absolute_time(void)
+{
+	return HRT_COUNTER_SCALE(rMTIME);            /* CLINT mtime: 1 MHz, 64 bit, never wraps */
+}
+
+static void hrt_tim_load(hrt_abstime delay)      /* one-shot deadline `delay` microseconds from now */
+{
+	rCONTROL = 0;
+	rLOADVAL = (uint32_t)(delay * timer_counts_per_us);
+	rCONTROL = CONTROL_HRT;
+}
+
+static int hrt_tim_isr(int irq, void *context, void *arg)
+{
+	latency_actual = rMTIME;
+	status = rRIS;  rRIS = status;               /* read, then write 1 to clear */
+	if (status & MPFS_MSTIMER_RIS_MASK) {
+		hrt_latency_update();                    /* STM32's code, unchanged */
+		hrt_call_invoke();                       /* run callouts that are due */
+		hrt_call_reschedule();                   /* arm the next deadline */
+	}
+	return OK;
+}
+```
+
+| Part | Meaning |
+|---|---|
+| `rMTIME` | The CLINT time register, read with one 64-bit load. It is shared with Linux and never wraps, so STM32's wrap tracking (`base_time`) disappears. |
+| `hrt_tim_load(delay)` | MSS Timer 1 in one-shot mode, loaded with the **time remaining** until the deadline (instead of STM32's absolute compare value). |
+| `hrt_tim_isr` | Same shape as STM32's. The callout queue, `hrt_call_*` API and latency histogram are STM32's code, unchanged. |
+| `mtimecmp` for hart 1 | **Not used** by HRT: it already drives the NuttX system tick, as SysTick does on STM32. |
+
+Start-up measures the timer clock instead of trusting a constant:
+
+```c
+rLOADVAL = UINT32_MAX;
+rCONTROL = MPFS_MSTIMER_ENABLE_MASK;             /* free-run */
+hrt_abstime start = rMTIME;
+uint32_t count_start = rVALUE;
+while (rMTIME - start < HRT_CALIBRATION_US) { }  /* 1 ms of mtime */
+uint32_t counts = count_start - rVALUE;
+...
+timer_counts_per_us = (counts + elapsed / 2) / elapsed;
+PX4_INFO("MSS Timer %d at %u MHz (expected %u)", ...);
+```
+
+Renode's timer counts at 100 MHz, the board's at the APB rate HSS sets up (150 MHz expected). Measuring once at boot makes the same ELF correct on both. The code also touches the shared `SYSREG` clock and reset registers only if the bits are not already right, because Linux and the other harts share them and there is no atomic set/clear.
+
+**Identity** (`microchip_common/version/board_identity.c`). STM32 reads a unique id straight from a fixed address. MPFS has a 128-bit device serial number read through the system controller:
+
+```c
+uint8_t dsn[PX4_CPU_UUID_BYTE_LENGTH] = {};
+bool nonzero = false;
+if (mpfs_read_dsn(dsn, sizeof(dsn)) == (int)sizeof(dsn)) {
+	for (unsigned i = 0; i < sizeof(dsn); i++) nonzero |= dsn[i] != 0;
+}
+memcpy(chip_uuid_words, nonzero ? (const void *)dsn : (const void *)"chipwings-renode", sizeof(chip_uuid_words));
+```
+
+Renode has no system controller, so unmapped reads return zero ("not busy") and the DSN is all zeros. All-zero (or a read error) falls back to the string `chipwings-renode`. On the board the real DSN is used, and nothing else needs changing.
+
+`board_mcu_version` returns 0 with revision `'?'`: returning -1 makes `ver` print "UNKNOWN MCU".
+
+**`board_critmon`** is intentionally empty: NuttX 12's critical-section monitor uses `perf_gettime()`; PX4 only needs the symbols to exist for the target to link.
+
+**`include/px4_arch/*.h`** are the micro-HAL and hardware-description headers PX4 includes from board code. Ours define the minimum (no GPIO list, no I2C or SPI buses yet).
+
+### 4. Board files `boards/chipwings/mpfs-hart1/`
+
+**`src/board_config.h`:**
+
+```c
+#define HRT_TIMER               1  /* use MSS Timer 1 for the HRT deadlines */
+#define BOARD_ENABLE_CONSOLE_BUFFER
+#define BOARD_CONSOLE_BUFFER_SIZE (1024*32)
+#define PX4_GPIO_INIT_LIST { }
+int board_rpmsg_initialize(void);
+int board_rpmsg_tty_initialize(void);
+```
+
+| Line | Meaning |
+|---|---|
+| `HRT_TIMER 1` | Which MSS timer `hrt.c` claims (the other stays free). |
+| `BOARD_ENABLE_CONSOLE_BUFFER` + 32 KiB | `dmesg` keeps the boot log. The default 4 KiB lost the start of boot, and the tests read the boot lines. |
+| `PX4_GPIO_INIT_LIST { }` | No GPIO to initialise (no LEDs, PWM, ADC on hart 1). |
+| the two `board_rpmsg*` prototypes | Used by `init.cpp`, defined in `rpmsg.c` and `rpmsg_tty.c`. |
+
+**`src/init.cpp`:**
+
+```cpp
+extern "C" __EXPORT void mpfs_boardinitialize(void) { }
+
+__EXPORT int board_app_initialize(uintptr_t arg)
+{
+	px4_platform_init();        /* console buffer, hrt, work queues, parameters, uORB; mounts /proc and /bin */
+	board_rpmsg_initialize();   /* IHC + RPMsg to Linux (rpmsg.c) */
+	px4_platform_configure();   /* HW based on the manifest */
+	return OK;
+}
+```
+
+NuttX calls `mpfs_boardinitialize()` early in start-up and `board_app_initialize()` from `boardctl()`. PX4's NuttX build compiles **no NuttX board sources** (its `boards/Makefile` builds a `dummy.c`), so the hooks the stock icicle board provided have to be defined here. `mpfs_boardinitialize` is empty because the icicle board only initialised LEDs there and hart 1 has none. `board_app_initialize` is the point where PX4's own start-up begins.
+
+**`src/rpmsg.c`:**
+
+```c
+static int rpmsg_start_thread(int argc, char *argv[])
+{
+	int ret = rptun_boot("mpfs-ihc");            /* blocks until Linux sets DRIVER_OK */
+	...
+	syslog(LOG_INFO, "[rpmsg] Linux attached (%s)\n", "mpfs-ihc");
+	return ret;
+}
+
+int board_rpmsg_initialize(void)
+{
+	ret = mpfs_ihc_init();
+	ret = board_rpmsg_tty_initialize();          /* the callback must exist before rptun_boot() */
+	ret = kthread_create("rpmsg_start", 10, 2048, rpmsg_start_thread, NULL);
+	return ret < 0 ? ret : 0;
+}
+```
+
+| Part | Meaning |
+|---|---|
+| In **C**, not C++ | libmetal's headers need `<atomic>` from C++, which PX4's NuttX C++ build (`-nostdinc++`) does not provide. |
+| `rptun_boot("mpfs-ihc")` | Same job as Phase 4's `cwinit`. NuttX 12.12 (PX4's fork) names the CPU `mpfs-ihc`; NuttX 13.1 used `mpfsihc`. |
+| own thread, priority 10 | `rptun_boot()` waits for Linux, and **PX4 must boot without it**. A low-priority thread (about 0.4% CPU while waiting) keeps every PX4 task running regardless. |
+| tty before `rptun_boot()` | The RPMsg device callback must be registered before the device appears. |
+
+**`src/CMakeLists.txt`:** lists the board library `drivers_board` with `init.cpp rpmsg.c rpmsg_tty.c` and links `nuttx_arch`, `nuttx_drivers`, `px4_layer`.
+
+**`init/rc.board_early`:**
+
+```sh
+mount -t tmpfs /fs/microsd
+set STORAGE_CHECK no
+```
+
+PX4's scripts expect an SD card at `/fs/microsd` for parameters and logs. There is none on hart 1, so a RAM file system takes its place: parameters and logs are lost at reset, which is fine with SIH. `STORAGE_CHECK no` skips the storage check.
+
+**`init/rc.board_defaults`:**
+
+```sh
+param set-default SYS_AUTOSTART 1100
+param set-default NAV_DLL_ACT 3
+param set-default COM_DL_LOSS_T 5
+```
+
+`1100` is the `1100_rc_quad_x_sih` airframe (a quadcopter simulated by SIH). The other two are the link-loss behaviour (lesson 8).
+
+**`nuttx-config/scripts/script.ld`:**
+
+```text
+MEMORY {
+    progmem (rx) : ORIGIN = 0xa2450000, LENGTH = 12M
+    sram   (rwx) : ORIGIN = 0xa3050000, LENGTH = 0xff0000
+    rsctbl (rw)  : ORIGIN = 0xa2300000, LENGTH = 4K
+}
+PHDRS {
+    text   PT_LOAD FLAGS(5);   /* R X */
+    data   PT_LOAD FLAGS(6);   /* R W */
+    bss    PT_LOAD FLAGS(6);   /* R W */
+    rsctbl PT_LOAD FLAGS(6);   /* R W */
+}
+```
+
+PX4 sits after the resource table and vrings (`0xA2450000`), inside the block Linux reserves. The `PHDRS` block assigns each part of the image to its own program header: without it the linker puts the writable `.init_array` in the code segment, and the ELF reports a read-write-execute segment.
+
+**`nuttx-config/nsh/defconfig`** carries PX4's requirements and the IHC settings of Phase 4 (`CONFIG_MPFS_IHC_CLIENT`, `CONFIG_RPTUN`, `CONFIG_RPMSG_PING`), plus `CONFIG_RAM_START=0xa3050000` (must equal the `sram` origin above), `CONFIG_RAM_SIZE=16711680`, 8 KiB default and init task stacks, `CONFIG_STACK_COLORATION=y` (lets `top` show stack use), and `CONFIG_BOARD_RESET_ON_ASSERT=2`.
+
+**`default.px4board`:** the module list. Everything not listed is not built:
+
+```text
+CONFIG_ARCH_CHIP_MPFS=y
+CONFIG_SYSTEMCMDS_{DMESG,PARAM,PERF,REBOOT,TOP,UORB,VER,WORK_QUEUE,...}=y
+CONFIG_MODULES_SIMULATION_SIMULATOR_SIH=y
+CONFIG_MODULES_{COMMANDER,EKF2,SENSORS,MC_ATT_CONTROL,MC_POS_CONTROL,MC_RATE_CONTROL,CONTROL_ALLOCATOR,
+                FLIGHT_MODE_MANAGER,NAVIGATOR,LAND_DETECTOR,LOAD_MON,MAVLINK,EVENTS,DATAMAN,
+                MANUAL_CONTROL,RC_UPDATE}=y
+```
+
+(In the file each option is on its own line.) The first line makes the CMake chip detection of patch 0001 take the MPFS branch. SIH replaces real sensors and motors, so the rest is a full flight stack.
+
+**`firmware.prototype`:** PX4 requires one per board. Ours gives it `board_id 7300`, the name `CHIPWINGS-MPFS-HART1` and a 12 MiB maximum image size (the same 12 MiB as `progmem`).
+
+### 5. `sim/phase5/px4-linux.resc`
+
+It is `rpmsg.resc` with two changes:
+
+```diff
+-$nuttx?=$ORIGIN/../../sw/out/nsh-rpmsg-hart1/nuttx
++$px4?=$ORIGIN/../../sw/out/px4/chipwings_mpfs-hart1_default.elf
+...
++emulation SetGlobalQuantum "0.00001"
+...
+-    sysbus LoadELF $nuttx false u54_1
++    sysbus LoadELF $px4 false u54_1
+```
+
+`SetGlobalQuantum "0.00001"` sets Renode's time quantum to 10 us. Harts see each other's events only at quantum boundaries; at the default 100 us PX4's HRT callouts ran up to 100 us late whenever Linux was idle (22% in the 51-100 us bucket of `perf latency`; at 10 us nothing was later than 20 us). Real hardware has no such floor, so the smaller quantum is closer to real timing, and the idle real-time ratio stays near 1. `px4.resc` (PX4 alone) needs no such setting.
+
 ## Files
 
 | File | Change | Reason |

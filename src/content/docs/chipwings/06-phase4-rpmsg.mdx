@@ -125,6 +125,575 @@ A first workaround (`machine SetSerialExecution true`) took boot from 24 s to 41
 | `hartcheck` | Linux | Uses exactly harts 2-4 |
 | `rpmsg_ping`, `rpmsg_echo`, `rpmsg_imu` | Linux | Round trips, every size from 1 to 496 bytes, ordered IMU stream at the requested rate |
 
+## Replicate step by step
+
+Do these in order. Each step ends with something you can check before moving on.
+
+**1. Write the simulator pieces** (`sim/peripherals/`): `MiV_IHC.cs`, `SafeIrqRiscV64.cs`, `SafeIpiCoreLevelInterruptor.cs`. They are plain Renode C# peripherals, compiled when a `.resc` script `include`s them. The key parts are quoted below; the three complete files are about 530 lines together in the repository. *Check:* a Phase 2 run (`sim/phase2/run.sh headless`) still boots, because it already loads these files.
+
+**2. Update the platform** `sim/platforms/chipwings-mpfs.repl`: copy Renode's `platforms/cpus/polarfire-soc.repl` and apply the five edits in "Exact changes, part 1". *Check:* no `.repl` error in the Renode log.
+
+**3. Add the OpenSBI extension.** Put `0001-platform-generic-add-Microchip-PolarFire-SoC-Mi-V-IHC-SBI-extension.patch` in `sw/br2-chipwings/patches/opensbi/`. The folder name must equal the Buildroot package name (`opensbi`): Buildroot applies every patch it finds in `<patch dir>/<package>/`, and our patch directory is already in `BR2_GLOBAL_PATCH_DIR`. Then:
+
+```sh
+sw/build-linux.sh opensbi-dirclean       # a plain rebuild would not re-apply patches
+sw/build-linux.sh
+```
+
+*Check:* the OpenSBI boot log (top of the Linux console log) has the line `MPFS IHC: SBI extension 0x9000029, context A hart 2 <-> context B hart 1`.
+
+**4. Extend the device tree** with the two nodes in "Exact changes, part 6", then `sw/build-linux.sh linux-rebuild all`. *Check:* in Linux, `dmesg | grep -i -E "ihc|remoteproc"` shows both drivers binding.
+
+**5. Patch NuttX** with `sw/patches/0002`, `0003`, `0004`. They are created, as the others were, with `git diff` against a clean `nuttx-13.1.0` tree; `build-nuttx.sh` applies them in file-name order.
+
+**6. Create the config** `sw/configs/nsh-rpmsg-hart1/defconfig` (the changed lines in part 8) and its `ld.script` (adds the 4 KiB `rsctbl` region and `.resource_table` section, part 7). **Create the `cwinit` app** (part 9) in `sw/chipwings-apps/cwinit/`.
+
+**7. Build and run:**
+
+```sh
+sw/build-nuttx.sh nsh-rpmsg-hart1
+sw/build-linux.sh
+sim/phase4/run.sh headless
+```
+
+NuttX console: `mpfs_ihc_init: ..master is online`, then `cwinit: /dev/rptun/mpfsihc started`, then NSH. Linux: `ls /sys/bus/rpmsg/devices` gives `virtio0.rpmsg-ping.-1.1025`.
+
+**8. Test:**
+
+```sh
+sim/phase4/rpmsg_test.py 500          # RESULT rounds=500 ok=500 bad=0
+examples/run_examples.py              # 6/6 examples passed
+```
+
+## Exact changes, line by line
+
+### Part 1: `sim/platforms/chipwings-mpfs.repl` versus Renode's stock file
+
+```diff
+-e51: CPU.RiscV64 @ sysbus
++e51: CPU.SafeIrqRiscV64 @ sysbus
+ ... the same one-word change for u54_1, u54_2, u54_3 and u54_4 ...
+-clint: IRQControllers.CoreLevelInterruptor  @ sysbus 0x2000000
++clint: IRQControllers.SafeIpiCoreLevelInterruptor @ sysbus 0x2000000
+@@ at the end of the file @@
++ihc: Miscellaneous.MiV_IHC @ sysbus 0x50000000
++    Hart1IRQ -> plic@180
++    Hart2IRQ -> plic@179
++    Hart3IRQ -> plic@178
++    Hart4IRQ -> plic@177
+```
+
+| Edit | Why |
+|---|---|
+| `CPU.SafeIrqRiscV64` for every hart | Replace the CPU class by our subclass that cannot lose interrupts raised from another thread (part 2). |
+| `SafeIpiCoreLevelInterruptor` for the CLINT | Replace the CLINT by one whose IPI line always matches its `msip` register (part 3). |
+| `ihc: ... @ sysbus 0x50000000` | Add the Mi-V IHC where the Icicle Kit reference design maps it. |
+| `HartNIRQ -> plic@(181 - N)` | Each hart's IHC aggregator output is a PLIC source: hart 1 is 180, hart 2 is 179, hart 3 is 178, hart 4 is 177. NuttX uses 180 and Linux uses 179. |
+
+### Part 2: `SafeIrqRiscV64.cs`
+
+```csharp
+public class SafeIrqRiscV64 : RiscV64
+{
+    public override void OnGPIO(int number, bool value)
+    {
+        bool schedule;
+        lock(pendingLock) { pending[number] = value; schedule = !applyScheduled; applyScheduled = true; }
+
+        if(ownerMachine.SystemBus.TryGetCurrentCPU(out var current) && current == this)
+            ApplyPending();                                                  // own thread: as before
+        else if(schedule)
+            ownerMachine.LocalTimeSource.ExecuteInNearestSyncedState(_ => ApplyPending());
+    }
+    private void ApplyPending() { /* take pending[], then base.OnGPIO(n, v) for each */ }
+}
+```
+
+| Line | Meaning |
+|---|---|
+| `class SafeIrqRiscV64 : RiscV64` | Same CPU, one method overridden. The long constructor only forwards every argument to the base class. |
+| `OnGPIO` | Called by Renode whenever an interrupt line to this CPU changes. In the stock class it writes the CPU's `mip` register on **the thread that raised the line**. |
+| `pending[number] = value` | Remember the latest wanted level per line. Only the newest matters. |
+| `current == this` | If the CPU's own thread is raising the line, apply it at once: nobody else is writing `mip` then. |
+| `ExecuteInNearestSyncedState(...)` | Otherwise postpone until Renode reaches a point where no CPU is executing, and apply it there. At that moment no other thread can be modifying this hart's `mip`. |
+
+The bug this fixes: hart 3 raising hart 2's software interrupt wrote `mip` while hart 2 was updating its own `mip` (OpenSBI sets the timer bit). One write overwrote the other and the interrupt was lost; because `GPIO.Set` ignores repeated values, the line never asserted again.
+
+### Part 3: `SafeIpiCoreLevelInterruptor.cs`
+
+A copy of Renode's `CoreLevelInterruptor.cs` with one block changed, the `msip` write:
+
+```csharp
+if(TryGetMsipHart(offset, out var hart))
+{
+    Volatile.Write(ref msip[hart], (int)(value & 1));
+    int current;
+    do
+    {
+        current = Volatile.Read(ref msip[hart]);
+        irqs[2 * hart].Set(current != 0);
+    }
+    while(Volatile.Read(ref msip[hart]) != current);
+    return;
+}
+```
+
+| Line | Meaning |
+|---|---|
+| `Volatile.Write(ref msip[hart], ...)` | Store the new `msip` bit. |
+| the `do ... while` | Set the interrupt line to the value `msip` holds **now**, and repeat until `msip` did not change while we were setting it. Whichever write lands last also leaves the line matching it. |
+
+The stock code stored the bit and then set the line with nothing around the pair. Two harts writing the same `msip` could interleave as "store 0, store 1, set line true, set line false", leaving `msip` at 1 and the line low. We also tried a lock; it deadlocked against Renode's timer code (`CompareReached` runs under the clock source's lock while an `mtimecmp` write calls into the timer), so the loop replaced it. `mtimecmp` is unchanged: only its own hart writes it.
+
+### Part 4: the Mi-V IHC model `MiV_IHC.cs`
+
+Register map, per local hart `l` and remote hart `r` (channel), from the file header:
+
+```text
+base 0x50000000
+ + 0x500*l + 0x100*slot      channel l->r, slot = (r < l) ? r : r-1        (IHCC)
+      0x00 version   0x04 control   0x08 local hart id   0x0C message size (words)
+      0x20..0x2C message in [4]   0x30..0x3C message out [4]
+ + 0x500*l + 0x400           aggregator for hart l                         (IHCIA)
+      0x00 version   0x04 INT_EN   0x08 MSG_AVAIL  (bit 2r = message from r, bit 2r+1 = ack from r)
+```
+
+Control register bits (same as Microchip's HSS `miv_ihc.c`):
+
+| Bit | Name | Behaviour in the model |
+|---|---|---|
+| 0 | RMP | Set by the sender: "I put a message in my message-out". |
+| 1 | MP | Reads the **remote's** RMP. Writing 0 consumes the remote's message (clears its RMP). |
+| 2 | MPIE | Message-present interrupt enable. |
+| 3 | ACK | The ack this side has sent; held until the remote clears it. |
+| 4 | ACK_CLR | Writing 0 clears the ack the remote sent. Reads as 1, so a read-modify-write that does not mean to clear it leaves it alone. |
+| 5 | ACKIE | Ack interrupt enable. |
+
+The core of the model, `WriteControl` and the interrupt computation:
+
+```csharp
+private void WriteControl(int l, int r, uint value)
+{
+    var sending = (value & Rmp) != 0 && !rmp[l, r];
+    rmp[l, r] = (value & Rmp) != 0;
+    if((value & Mp) == 0 && rmp[r, l])      // writing MP = 0 consumes the remote's message
+    {
+        rmp[r, l] = false;
+        this.Log(LogLevel.Debug, "hart {0} consumed message from hart {1}", l, r);
+    }
+    mpie[l, r] = (value & MpIe) != 0;
+    ackOut[l, r] = (value & Ack) != 0;
+    if((value & AckClr) == 0) ackOut[r, l] = false;   // writing ACK_CLR = 0 clears the incoming ack
+    ackie[l, r] = (value & AckIe) != 0;
+    UpdateInterrupts();
+}
+
+private uint MessageAvailable(int l)       // what hart l's aggregator reports
+{
+    var avail = 0u;
+    for(var r = 0; r < Harts; r++)
+    {
+        if(r == l) continue;
+        if(rmp[r, l] && mpie[l, r])    avail |= 1u << (2 * r);        // message from r
+        if(ackOut[r, l] && ackie[l, r]) avail |= 1u << (2 * r + 1);   // ack from r
+    }
+    return avail;
+}
+
+private void UpdateInterrupts()
+{
+    for(var l = 0; l < Harts; l++)
+        irqs[l].Set((MessageAvailable(l) & intEn[l]) != 0);       // level interrupt to the PLIC
+}
+```
+
+| Line | Meaning |
+|---|---|
+| `rmp[l, r]` | "Hart l has a message waiting for hart r". |
+| `(value & Mp) == 0 && rmp[r, l]` | This is the rule that **caused the lost-notification race**: writing MP as 0 consumes the remote's message. |
+| `MessageAvailable` | Bit `2r` for a message pending from r (when enabled), bit `2r+1` for an ack from r. |
+| `UpdateInterrupts` | The line to the PLIC is high while any enabled bit is set, so the interrupt is **level**-triggered and stays until the software consumes the message or clears the ack. |
+
+Debug logging is built in: `logLevel 0 ihc` prints every message sent, consumed and acked. We found the race with it.
+
+### Part 5: the OpenSBI extension (`0001-...patch`)
+
+The patch adds two files to OpenSBI's `platform/generic/microchip/`: `mpfs_ihc.c` (the extension) and `objects.mk` (the build rule). The `objects.mk`:
+
+```make
+carray-platform_override_modules-y += microchip_mpfs_ihc
+platform-objs-y += microchip/mpfs_ihc.o
+```
+
+This registers our driver as a platform override module of the generic platform.
+
+**Why it exists.** The Linux mailbox driver never touches the IHC registers. It makes SBI calls to the firmware (extension `0x09000029`) and the firmware, HSS on the board, does the register access. Without HSS we must provide those calls ourselves.
+
+The pieces of `mpfs_ihc.c`:
+
+```c
+#define SBI_EXT_MICROCHIP_TECHNOLOGY (0x09000000UL | 0x029UL)
+enum { SBI_EXT_IHC_INIT, SBI_EXT_IHC_TX, SBI_EXT_IHC_RX,
+       SBI_EXT_RPROC_STATE, SBI_EXT_RPROC_START, SBI_EXT_RPROC_STOP };
+#define IHC_CONTEXT_A 5      /* Linux's side */
+#define IHC_CONTEXT_B 6      /* the remote: NuttX */
+```
+
+These must match Linux's `include/linux/mailbox/miv_ihc.h` and `dt-bindings/mailbox/miv-ihc.h`. Generic OpenSBI's vendor slot is `0x09000000 + mvendorid`; SiFive's id is `0x489`, Microchip's extension is `0x029`, so the id cannot come from the platform and is hard-coded.
+
+```c
+static volatile void *ihc_chan(u32 l, u32 r, unsigned long reg)
+{ return (volatile void *)(IHC_BASE + IHC_HART_STRIDE * l + 0x100UL * (r < l ? r : r - 1) + reg); }
+static volatile void *ihc_ia(u32 l, unsigned long reg)
+{ return (volatile void *)(IHC_BASE + IHC_HART_STRIDE * l + 0x400UL + reg); }
+```
+
+The same address arithmetic as the model's `Decode`.
+
+```c
+static int ihc_init(void)
+{
+	u32 a = ctx_a_hart, b = ctx_b_hart;
+	writel(0, ihc_chan(a, b, IHC_CTRL));
+	writel((1U << (2 * b)) | (1U << (2 * b + 1)), ihc_ia(a, IHCIA_INT_EN));
+	writel(MPIE_EN | ACKIE_EN | ACK_CLR, ihc_chan(a, b, IHC_CTRL));
+	return 0;
+}
+```
+
+Reset the channel, enable the aggregator bits for "message from b" and "ack from b", then enable the message and ack interrupts (keeping `ACK_CLR` set so nothing is cleared).
+
+```c
+static int ihc_tx(unsigned long addr)
+{
+	...
+	do { ctrl = readl(ihc_chan(a, b, IHC_CTRL)); }
+	while ((ctrl & (RMP_MESSAGE_PRESENT | ACK_INT)) && --retries);   /* wait: last message taken, ack seen */
+	if (ctrl & (RMP_MESSAGE_PRESENT | ACK_INT)) return SBI_EDENIED;
+	for (i = 0; i < words; i++) writel(msg[i], ihc_chan(a, b, IHC_MSG_OUT + 4 * i));
+	writel(ctrl | RMP_MESSAGE_PRESENT | MP_KEEP, ihc_chan(a, b, IHC_CTRL));   /* raise RMP */
+	return 0;
+}
+```
+
+Send: wait until the previous message was taken and acked, copy the words, then set RMP. **`MP_KEEP`** is the fix from the race below.
+
+```c
+static int ihc_rx(unsigned long addr)
+{
+	...
+	if (avail & (1U << (2 * b + 1))) {                      /* an ack arrived */
+		out->irq_type = IHC_ACK_IRQ;
+		writel((ctrl & ~ACK_CLR) | MP_KEEP, ihc_chan(a, b, IHC_CTRL));   /* clear it, keep MP */
+	} else if (avail & (1U << (2 * b))) {                  /* a message arrived */
+		... copy words into out->msg ...
+		out->irq_type = IHC_MP_IRQ;
+		ctrl &= ~MP_MESSAGE_PRESENT;                       /* consume it */
+		if (ctrl & ACKIE_EN) ctrl |= ACK_INT;              /* and ack it */
+		writel(ctrl, ihc_chan(a, b, IHC_CTRL));
+	} else return SBI_ENOENT;
+	return 0;
+}
+```
+
+One event per call, ack first (as HSS does). Anything still pending keeps the level interrupt asserted, so Linux calls again.
+
+```c
+static int mpfs_ihc_ecall_handler(unsigned long extid, unsigned long funcid, ...)
+{
+	if (regs->a0 != IHC_CONTEXT_B) return SBI_EINVAL;
+	switch (funcid) {
+	case SBI_EXT_IHC_INIT: return ihc_init();
+	case SBI_EXT_IHC_TX:   return ihc_tx(regs->a1);
+	case SBI_EXT_IHC_RX:   return ihc_rx(regs->a1);
+	case SBI_EXT_RPROC_STATE: out->value = RPROC_CONTEXT_RUNNING; return 0;   /* NuttX is already running */
+	default: return SBI_ENOTSUPP;                                              /* start/stop: hart 1 is not ours */
+	}
+}
+```
+
+`a0` carries the remote context (`B`); `a1` carries the message buffer address for tx and rx. `RPROC_STATE` always answers "running" because in Renode NuttX is loaded and started before Linux boots, which is what lets `miv_remoteproc` attach instead of trying to load firmware.
+
+```c
+static int mpfs_ihc_final_init(bool cold_boot)
+{
+	rc = generic_final_init(cold_boot);
+	...
+	for (h = 1; h < IHC_NUM_HARTS; h++) {
+		bool ours = sbi_hartindex_valid(sbi_hartid_to_hartindex(h));
+		if (ours && ctx_a_hart == -1U) ctx_a_hart = h;          /* lowest hart OpenSBI runs on: 2 */
+		else if (!ours && ctx_b_hart == -1U) ctx_b_hart = h;    /* lowest U54 it does not run on: 1 */
+	}
+	...
+	rc = sbi_ecall_register_extension(&ecall_mpfs_ihc);
+}
+```
+
+The two contexts are **derived from the harts OpenSBI was started on**, not hard-coded: A is the lowest hart this OpenSBI instance owns (2), B is the lowest U54 it does not own (1). This is why the Linux device tree leaves hart 1 out. The driver hooks itself in by replacing `generic_platform_ops.final_init`, and it matches the device tree by `compatible = "microchip,mpfs"`.
+
+**Not copied from NuttX:** NuttX has its own SBI handler (`mpfs_ihc_sbi.c`), but it takes `irq_type` first and uses two-word messages, while the current Linux driver uses a four-word message followed by `irq_type`. We ported HSS's handler instead, which is what the Linux driver was written against.
+
+### Part 6: the Linux device tree nodes
+
+Added to `chipwings-mpfs-linux.dts`, after `reserved-memory`:
+
+```dts
+	ihc: mailbox {
+		compatible = "microchip,miv-ihc";
+		interrupt-parent = <&plic>;
+		interrupts = <IHC_HART2_INT>;
+		microchip,miv-ihc-remote-context-id = <IHC_CONTEXT_B>;
+		#mbox-cells = <1>;
+	};
+
+	remoteproc-nuttx {
+		compatible = "microchip,miv-remoteproc";
+		memory-region = <&vdev0buffer>, <&rsctable>, <&vdev0vring0>, <&vdev0vring1>;
+		mboxes = <&ihc 0>;
+	};
+```
+
+| Property | Meaning |
+|---|---|
+| `compatible = "microchip,miv-ihc"` | Binds Microchip's mailbox driver. It makes SBI calls to the extension above. |
+| `interrupts = <IHC_HART2_INT>` | PLIC source 179: the aggregator output of hart 2, which our model drives. |
+| `microchip,miv-ihc-remote-context-id = <IHC_CONTEXT_B>` | Talk to context B, i.e. NuttX. |
+| `microchip,miv-remoteproc` | The remoteproc driver that attaches to an **already running** remote (NuttX) rather than loading firmware. |
+| `memory-region = <&vdev0buffer>, <&rsctable>, <&vdev0vring0>, <&vdev0vring1>` | **The order matters.** The kernel takes `vdev0buffer` only through `memory-region` index 0 (the remoteproc driver skips that entry when it builds its carveouts), and the resource table at the next index. |
+| `mboxes = <&ihc 0>` | The doorbell channel. |
+
+### Part 7: NuttX patches (`sw/patches/0002` to `0004`)
+
+#### 0002: resource table at a fixed address
+
+```diff
+ struct mpfs_rptun_shmem_s
+ {
+-  volatile uintptr_t         base;
+   struct rptun_rsc_s         rsc;
++  volatile uintptr_t         base;
+   bool                       master_up;
+ };
+...
+-static struct mpfs_rptun_shmem_s   g_shmem;
++static struct mpfs_rptun_shmem_s   g_shmem locate_data(".resource_table");
+```
+
+| Change | Why |
+|---|---|
+| Move `rsc` above `base` | The resource table must be the **first** bytes of the section, because Linux reads the table from the start of the `rsc-table` region. Before, `base` was first, so the table sat 8 bytes in. |
+| `locate_data(".resource_table")` | Put the whole structure in its own section. The linker script then places that section at `0xA2300000`. Without it, `g_shmem` lived in `.bss` at an address nobody could predict. |
+
+The matching linker script lines (`sw/configs/nsh-rpmsg-hart1/ld.script`, versus the Phase 3 script):
+
+```diff
+ MEMORY
+ {
+     progmem (rx) : ORIGIN = 0xa2000000, LENGTH = 2M
+     sram   (rwx) : ORIGIN = 0xa2200000, LENGTH = 1M
++    rsctbl (rw)  : ORIGIN = 0xa2300000, LENGTH = 4K
+ }
+ ...
++    /* Loaded as zeros with the image; NuttX fills it in at rptun start */
++    .resource_table : ALIGN(8) {
++        KEEP(*(.resource_table))
++    } > rsctbl
+```
+
+`KEEP` stops the linker discarding it; "loaded as zeros" means the image contains a zeroed table until NuttX fills it in. The Linux device tree's `rsc-table@a2300000` points at the same address.
+
+#### 0003: stale-ack loop and lost notification
+
+```diff
+-                  if ((g_connected_hart_ints & test_int) == test_int)
++                  if ((msg_avail & test_int) &&
++                      (g_connected_hart_ints & test_int) == test_int)
+                     {
+                       *is_msg = true;
+                     }
+```
+
+In the interrupt handler, every incoming **ack** also reported "there is a message" for a connected hart, even when that hart's message-present bit was not set. The handler then "received" the stale previous message and acked it, a message that never came. The fix adds the missing condition: only report a message when `msg_avail` has that hart's bit.
+
+```diff
++#define MPFS_RPTUN_NOTIFY_RETRIES   1000
++#define MPFS_RPTUN_NOTIFY_DELAY_US  10
+ ...
+-  uint32_t retries = 5;
++  uint32_t retries = MPFS_RPTUN_NOTIFY_RETRIES;
+ ...
+-      do
+-        {
+-           ret = mpfs_ihc_tx_message(CONTEXTA_HARTID, tx_msg);
+-        }
+-      while ((ret != OK) && --retries);
+-
+-      if (retries == 0)
+-        {
+-          return -EIO;
+-        }
++      while ((ret = mpfs_ihc_tx_message(CONTEXTA_HARTID, tx_msg)) != OK &&
++             --retries > 0)
++        {
++          up_udelay(MPFS_RPTUN_NOTIFY_DELAY_US);
++        }
++
++      if (ret != OK)
++        {
++          ihcerr("ERROR: vring %" PRIu32 " notification lost: %d\n", notifyid, ret);
++          return -EIO;
++        }
+```
+
+`mpfs_rptun_notify()` is the "ring the doorbell" call. The channel is busy while the previous notification or a Linux message is pending, and the busy state is cleared by NuttX's own interrupt handler. The old code gave up after five back-to-back tries when a Linux message was pending, and a lost doorbell leaves Linux waiting for data that is already in the vring. The new code retries (1000 times, 10 us apart, about 10 ms; patch 0005 shortens that later) and reports if it ever gives up.
+
+(Patch 0003 also has an `#include <inttypes.h>` hunk for `PRIu32`.)
+
+#### 0004: the read-modify-write race (`MP_KEEP`)
+
+```diff
++#define MP_KEEP                  MP_MASK
+...
+-  modifyreg32(MPFS_IHC_CTRL(g_work_arg.mhartid, g_work_arg.rhartid), 0, ACK_INT);
++  modifyreg32(MPFS_IHC_CTRL(g_work_arg.mhartid, g_work_arg.rhartid), 0, ACK_INT | MP_KEEP);
+...
+-      modifyreg32(MPFS_IHC_CTRL(mhartid, rhartid), 0, ACK_INT);
++      modifyreg32(MPFS_IHC_CTRL(mhartid, rhartid), 0, ACK_INT | MP_KEEP);
+...
+-                      ACK_CLR, 0);
++                      ACK_CLR, MP_KEEP);
+...
+-                            ACKIE_EN);
++                            ACKIE_EN | MP_KEEP);
+...
+-      modifyreg32(MPFS_IHC_CTRL(mhartid, rhartid), 0, RMP_MESSAGE_PRESENT);
++      modifyreg32(MPFS_IHC_CTRL(mhartid, rhartid), 0, RMP_MESSAGE_PRESENT | MP_KEEP);
+```
+
+`modifyreg32(addr, clear, set)` reads the register, clears and sets bits, and writes it back. The `MP` bit **mirrors the remote's RMP, and writing 0 to it consumes the remote's message**. Sequence of the bug:
+
+1. NuttX reads the control register: `MP` = 0 (no message from Linux yet).
+2. Linux sends a message: `MP` becomes 1.
+3. NuttX writes the register back with `MP` = 0 (its stale value). That write **consumes** the message nobody read, and no ack follows.
+
+The fix sets `MP` to 1 in every write that does not intend to consume. Writing 1 is harmless either way. The same fix went into the OpenSBI extension (`MP_KEEP`).
+
+### Part 8: the NuttX configuration delta
+
+`sw/configs/nsh-rpmsg-hart1/defconfig` versus `nsh-amp-hart1`:
+
+```diff
++CONFIG_CHIPWINGS_CWINIT=y
++CONFIG_CW_EXAMPLE_RPMSG_ECHO=y
++CONFIG_CW_EXAMPLE_RPMSG_IMU=y
++CONFIG_DEV_SIMPLE_ADDRENV=y
+-CONFIG_INIT_ENTRYPOINT="nsh_main"
++CONFIG_INIT_ENTRYPOINT="cwinit_main"
++CONFIG_MPFS_IHC_CLIENT=y
++CONFIG_MPFS_IHC_LINUX_ON_HART2=1
++CONFIG_MPFS_IHC_LINUX_ON_HART3=1
++CONFIG_MPFS_IHC_LINUX_ON_HART4=1
++CONFIG_MPFS_IHC_NUTTX_ON_HART1=1
++CONFIG_MPFS_IHC_NUTTX_ON_HART2=0
++CONFIG_RPMSG_PING=y
++CONFIG_RPTUN=y
+```
+
+| Option | Why |
+|---|---|
+| `MPFS_IHC_CLIENT` | Build NuttX's IHC driver (`mpfs_ihc.c`). |
+| `MPFS_IHC_LINUX_ON_HART2/3/4=1`, `NUTTX_ON_HART1=1`, `NUTTX_ON_HART2=0` | Tell the driver who is who: Linux on harts 2-4, NuttX on hart 1. (The driver's defaults are NuttX on hart 2 and Linux on harts 3 and 4, so every one of these has to be set for our layout.) |
+| `RPTUN`, `RPMSG_PING` | The remote-processor tunnel on OpenAMP, and the built-in `rpmsg-ping` endpoint the test uses. |
+| `DEV_SIMPLE_ADDRENV` | libmetal translates addresses through NuttX's `up_addrenv_*()` functions (we noted this when linking OpenAMP into PX4); this option provides the simple version of them. |
+| `CW_EXAMPLE_RPMSG_ECHO`, `_IMU` | Our two RPMsg test apps. |
+| `INIT_ENTRYPOINT="cwinit_main"` and `CHIPWINGS_CWINIT=y` | Start our `cwinit` instead of NSH directly (part 9). |
+
+### Part 9: the `cwinit` app
+
+`sw/chipwings-apps/cwinit/` has `Kconfig`, `Make.defs`, `Makefile` and `cwinit_main.c`. The `Kconfig`:
+
+```text
+config CHIPWINGS_CWINIT
+	tristate "cwinit: Chipwings start-up (RPMsg link to Linux, then NSH)"
+	default n
+	depends on SYSTEM_NSH
+
+if CHIPWINGS_CWINIT
+config CHIPWINGS_CWINIT_RPTUN
+	string "rptun device to start"
+	default "/dev/rptun/mpfsihc"
+	depends on RPTUN
+endif
+```
+
+The core of `cwinit_main.c`:
+
+```c
+static void start_rptun(FAR const char *path)
+{
+  int fd = open(path, O_WRONLY);
+  if (fd < 0) { printf("cwinit: %s not found, RPMsg to Linux not started\n", path); return; }
+  ret = ioctl(fd, RPTUNIOC_START, 0);
+  close(fd);
+  printf("cwinit: %s %s\n", path, ret < 0 ? "start failed" : "started");
+}
+
+int main(int argc, FAR char *argv[])
+{
+#ifdef CONFIG_RPTUN
+  start_rptun(CONFIG_CHIPWINGS_CWINIT_RPTUN);
+#endif
+  return nsh_main(argc, argv);
+}
+```
+
+**Why it exists.** NuttX's rptun does not start by itself. Linux reads the resource table at `0xA2300000` as it attaches. If NuttX has not started rptun, the table is still all zeros, and Linux attaches to an empty table and has no RPMsg channel. `RPTUNIOC_START` fills the table in. The app starts it first and then runs NSH as usual (`main` ends by calling `nsh_main`).
+
+### Part 10: the example programs and their build
+
+`examples/` is split by who runs what: `examples/nuttx/` (linked into NuttX as `apps/cwexamples`, the same way as `chipwings-apps`), `examples/linux/` (built by Buildroot) and `examples/common/cw_rpmsg_proto.h` (the message format both sides compile).
+
+The Buildroot package (`sw/br2-chipwings/package/chipwings-examples/chipwings-examples.mk`):
+
+```make
+CHIPWINGS_EXAMPLES_VERSION = local
+CHIPWINGS_EXAMPLES_SITE = $(BR2_EXTERNAL_CHIPWINGS_PATH)/../../examples
+CHIPWINGS_EXAMPLES_SITE_METHOD = local
+
+define CHIPWINGS_EXAMPLES_BUILD_CMDS
+	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D)/linux CC="$(TARGET_CC)" \
+		CFLAGS="$(TARGET_CFLAGS)" LDFLAGS="$(TARGET_LDFLAGS)"
+endef
+
+define CHIPWINGS_EXAMPLES_INSTALL_TARGET_CMDS
+	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D)/linux DESTDIR=$(TARGET_DIR) install
+endef
+
+$(eval $(generic-package))
+```
+
+| Line | Meaning |
+|---|---|
+| `SITE_METHOD = local` | Build from a folder on disk, not a download. `SITE` is the repository's `examples/` folder. |
+| `BUILD_CMDS` | Run our Makefile with Buildroot's cross compiler. |
+| `INSTALL_TARGET_CMDS` | Install the programs into the root filesystem (`/usr/bin`). |
+
+Its `Config.in` (`config BR2_PACKAGE_CHIPWINGS_EXAMPLES`, `depends on BR2_TOOLCHAIN_HAS_THREADS`) makes it selectable, and the defconfig turns it on. After you change a Linux program: `sw/build-linux.sh chipwings-examples-rebuild all`.
+
+### Part 11: the Phase 4 Renode script
+
+`sim/phase4/rpmsg.resc` is `amp.resc` with three differences, all in comments or paths: the NuttX ELF is `sw/out/nsh-rpmsg-hart1/nuttx`, the header lists the new regions and the IHC, and the platform it loads, `chipwings-mpfs.repl`, now has the IHC in it (part 1). `run.sh` has the same ports as before.
+
+### Part 12: `rpmsg_test.py`
+
+The script logs into Linux on its console and runs a guest script inside Linux:
+
+1. `modprobe rpmsg_char`, then bind the `rpmsg-ping` device from `/sys/bus/rpmsg/devices` to `rpmsg_chrdev` (`echo $D > /sys/bus/rpmsg/drivers/rpmsg_chrdev/bind`) so that `/dev/rpmsg0` appears.
+2. Send N ping requests (`cmd` with the ACK bit, `len`, `cookie`, then data) and read each reply.
+3. Check each reply's payload against the request.
+
+The last line it prints is `RESULT rounds=N ok=N bad=0` and the exit status is 0 only when every round trip matched.
+
 ## Files
 
 | File | Change | Reason |

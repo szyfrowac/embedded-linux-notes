@@ -97,7 +97,7 @@ This matters when you present: a *simulator fix* is not needed on the board, an 
 
 ## 4. Quick start for a teammate
 
-Build and run the whole thing (details in the repository `README.md` and each lesson):
+Set up the tools and source trees first ([replication guide](../setup-from-scratch/)). Then build and run the whole thing:
 
 ```sh
 sw/build-nuttx.sh nsh-rpmsg-hart1      # NuttX for Phase 4
@@ -111,8 +111,12 @@ Consoles: PX4 shell on `telnet localhost 33457`, Linux on `33458` (user `root`, 
 
 ## 5. How to read the other lessons
 
-Every lesson from 2 to 8 has the same three parts:
+Every phase lesson (2 to 8) has the same five parts:
 
-- **Why**: the goal of the phase and the problem we hit.
-- **How**: what we did, in order, including the commands.
-- **Files**: each file touched, with the reason in one line.
+- **Why**: the goal of the phase and the claim it must prove.
+- **How**: what we did and what went wrong on the way.
+- **Replicate step by step**: the commands and file creations, in order, with a check after each step so you can redo the work yourself.
+- **Exact changes, line by line**: the real diffs and code of every file we edited or wrote, each followed by a table that explains it.
+- **Files**: the one-line index of what was touched.
+
+To rebuild everything on a clean machine, start with the [replication guide](../setup-from-scratch/).

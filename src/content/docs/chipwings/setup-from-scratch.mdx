@@ -1,0 +1,184 @@
+---
+title: "Replication guide: set up and run everything"
+description: "A step-by-step tutorial to rebuild the Chipwings environment on a clean Linux machine: tools, source trees with exact versions, image downloads, and the build, run and test command for every phase."
+lesson:
+  module: "Chipwings module"
+  level: Intermediate
+  time: "60 min"
+---
+
+import LearningObjectives from '../../../components/LearningObjectives.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+<LearningObjectives outcomes={[
+  "Install Renode, the RISC-V toolchain and the host packages on a clean Ubuntu or Debian machine.",
+  "Fetch every upstream source tree at the exact version we used and know which parts of the repository are ours.",
+  "Build and run every phase and see the expected result.",
+  "Diagnose the common setup failures without asking the person who built it."
+]} />
+
+<Prerequisites
+  knowledge={["Linux shell, git", "Reading the Overview lesson"]}
+  software={["Ubuntu 22.04 or similar (we used Linux 6.8, Python 3.10)", "Plenty of free disk: the Linux, Buildroot and PX4 builds and their downloads are several GB (we did not measure the total)", "A fast network: the builds download several GB of sources"]}
+/>
+
+This lesson is the **tutorial**. The phase lessons explain *what each edit is and why*; this one tells you *what to type* to get the same system. Do it once, in order, then jump to the phase lessons when you want the reasoning behind a step.
+
+## Step 1: host tools
+
+```sh
+sudo apt-get install -y build-essential cmake ninja-build git kconfig-frontends \
+  python3 python3-pip netcat-openbsd telnet curl rsync unzip bc cpio
+```
+
+**Renode 1.17.0 (portable build).** The scripts expect `~/tools/renode_1.17.0-portable/renode`; set `RENODE=/path/to/renode` to use another location.
+
+```sh
+mkdir -p ~/tools
+curl -L --retry 5 https://dl.antmicro.com/projects/renode/builds/renode-1.17.0.linux-portable.tar.gz | tar xz -C ~/tools
+ls ~/tools        # the extracted folder is renode_1.17.0_portable (underscore) or similar
+mv ~/tools/renode_1.17.0_portable ~/tools/renode_1.17.0-portable    # only if the name differs
+~/tools/renode_1.17.0-portable/renode --version
+```
+
+**RISC-V compiler.** xPack `riscv-none-elf-gcc` 15.2.0-1 builds NuttX and PX4. Override with `TOOLCHAIN=/path/to/bin`.
+
+```sh
+curl -L --retry 5 https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v15.2.0-1/xpack-riscv-none-elf-gcc-15.2.0-1-linux-x64.tar.gz | tar xz -C ~/tools
+~/tools/xpack-riscv-none-elf-gcc-15.2.0-1/bin/riscv-none-elf-gcc --version
+```
+
+Linux, OpenSBI and the Linux test programs use a **different** compiler, Bootlin's prebuilt glibc toolchain, which Buildroot downloads itself. You install nothing for it.
+
+## Step 2: clone the repository
+
+```sh
+git clone git@github.com:szyfrowac/ChipWings.git
+cd ChipWings
+```
+
+What is in the repository, and what is not:
+
+| In git (ours) | Not in git, you fetch it (`.gitignore`) |
+|---|---|
+| `sw/patches/`, `sw/configs/`, `sw/chipwings-apps/`, `sw/br2-chipwings/`, `sw/px4-chipwings/`, `sw/px4-patches/`, the build scripts | `sw/nuttx/`, `sw/apps/`, `sw/buildroot/`, `sw/px4/`, `sw/px4-venv/` |
+| `sim/` scripts, peripherals and tests, `examples/` | `sim/images/` (Phase 0 binaries), build output (`sw/out/`, `sw/br2-out/`), logs |
+
+The design rule: **upstream trees stay clean and are changed only by patches and overlay directories that the build scripts apply.** That is why you can fetch fresh upstream trees and get the same result.
+
+## Step 3: fetch the upstream trees at the exact versions
+
+| Project | Version | Used in |
+|---|---|---|
+| Apache NuttX and nuttx-apps | tag `nuttx-13.1.0` | Phases 1-4 |
+| Buildroot | 2026.02.3 (LTS) | Phases 2-5, Linux side |
+| Linux kernel | linux4microchip+fpga-2025.10 (6.12.48), fetched by Buildroot | Phases 2-5 |
+| OpenSBI | 1.7, fetched by Buildroot | Phases 2-5 |
+| PX4-Autopilot | commit `5f429033bfc8cbd94143efe4e99a1acc8ae7d5bf`, with its own NuttX fork (12.12, `e5a23078`) | Phase 5 |
+| OpenAMP and libmetal | 2025.10.0 for NuttX 13.1 (fetched by the NuttX build); pinned commits `c4683284` and `a4bce350` for the PX4 fork | Phases 4-5 |
+
+```sh
+cd sw
+
+# NuttX and its apps
+git clone --branch nuttx-13.1.0 --depth 1 https://github.com/apache/nuttx.git nuttx
+git clone --branch nuttx-13.1.0 --depth 1 https://github.com/apache/nuttx-apps.git apps
+
+# Buildroot
+curl -L --retry 5 https://buildroot.org/downloads/buildroot-2026.02.3.tar.xz | tar xJ
+mv buildroot-2026.02.3 buildroot
+
+# PX4 at the commit we ported
+git clone https://github.com/PX4/PX4-Autopilot.git px4
+git -C px4 checkout 5f429033bfc8cbd94143efe4e99a1acc8ae7d5bf
+git -C px4 submodule update --init --recursive \
+  platforms/nuttx/NuttX/nuttx platforms/nuttx/NuttX/apps \
+  src/modules/mavlink/mavlink src/lib/events/libevents
+
+# Python environment for PX4's code generators
+python3 -m venv px4-venv
+./px4-venv/bin/pip install pyros-genmsg empy==3.3.4 kconfiglib jinja2 pyyaml pymavlink nunavut jsonschema
+cd ..
+```
+
+If `python3 -m venv` fails because `ensurepip` is missing (it needs the `python3-venv` package, and sudo), do what we did:
+
+```sh
+python3 -m venv --without-pip sw/px4-venv
+curl -sS https://bootstrap.pypa.io/get-pip.py | sw/px4-venv/bin/python
+```
+
+**OpenAMP and libmetal.** The first NuttX build with `CONFIG_RPTUN` downloads them. If the download is reset (we saw TLS resets), fetch the zip files yourself with `curl --retry 5 --retry-all-errors` into `sw/nuttx/openamp/` and, to keep them across `make distclean`, run `git init` inside `sw/nuttx/openamp/open-amp` and `sw/nuttx/openamp/libmetal` after the first unpack. For the PX4 fork, the pinned commits above are fetched the same way; the `.zip` is the make target, so a bare download is never unpacked unless the file name matches what the `.defs` recipe expects.
+
+## Step 4: the Phase 0 images
+
+Phase 0 runs unmodified vendor images. Download them into `sim/images/` and check the SHA1 (the hash is part of each URL):
+
+```sh
+mkdir -p sim/images && cd sim/images
+B=https://dl.antmicro.com/projects/renode
+curl -L --retry 5 --retry-all-errors -o pse-freertos-lwip.elf $B/pse-freertos-lwip.elf-s_1413416-f348e11b20bd1a8cb24c39e888cf6430e4ee4035
+curl -L --retry 5 --retry-all-errors -o icicle-hss.elf        $B/icicle--hss.elf-s_3297936-bcb7ef60abc78a878995554160eaac1dea962e95
+curl -L --retry 5 --retry-all-errors -o icicle-u-boot         $B/icicle--u-boot-s_5132448-194bf14572a9bc4b26727567065ede2ffd7f1201
+curl -L --retry 5 --retry-all-errors -o icicle-vmlinux        $B/icicle--vmlinux-s_8563992-fa2aad1e61ec38b411f6afb543503cb26601b1e2
+curl -L --retry 5 --retry-all-errors -o icicle-fitImage.fit   $B/icicle--fitImage.fit-s_16976563-1d0e86ed4cc7c24e167ca899fd929d954956b478
+curl -L --retry 5 --retry-all-errors -o icicle-emmc.img       $B/icicle--emmc.img-s_26746880-3a6ef871bc8eb6fcfbda344e8c23fb534ef89961
+sha1sum *        # compare with the 40-hex-digit suffix of each URL
+cd ../..
+```
+
+## Step 5: build, run and test every phase
+
+All commands are from the repository root. The simulator listens on three ports:
+
+| Port | What | Use |
+|---|---|---|
+| 33456 | Renode monitor | `telnet localhost 33456` |
+| 33457 | MMUART1: NuttX or PX4 shell | `telnet localhost 33457` |
+| 33458 | MMUART3: Linux | `telnet localhost 33458`, login `root` / `root` |
+
+| Phase | Build | Run | Verify | Expected |
+|---|---|---|---|---|
+| 0 | none | `renode --console --disable-gui sim/phase0/freertos-smoke.resc < /dev/null` and `renode --disable-gui -P 33456 sim/phase0/icicle-linux.resc` (lesson 2) | log files in `sim/phase0/logs/` | login prompt in the Linux log, web server in the FreeRTOS log |
+| 1 | `sw/build-nuttx.sh nsh-hart1` | `sim/phase1/run.sh headless` | `sim/phase1/check-one-core.sh`; in NSH `hartinfo`, `ostest` | only `u54_1` executes; `ostest` exit 0 |
+| 2 | `sw/build-linux.sh` | `sim/phase2/run.sh headless` | in Linux `nproc`, `cat /proc/cpuinfo` | 3 CPUs, harts 2, 3, 4 |
+| 3 | `sw/build-nuttx.sh nsh-amp-hart1` | `sim/phase3/run.sh headless` | `sim/phase1/check-one-core.sh` | both prompts after about 2 s |
+| 4 | `sw/build-nuttx.sh nsh-rpmsg-hart1` | `sim/phase4/run.sh headless` | `sim/phase4/rpmsg_test.py 500`, `examples/run_examples.py` | 500/500 and 6/6 |
+| 5a | `sw/build-px4.sh` | `sim/phase5/run.sh headless` | `sim/phase5/phase5_test.py` | 13/13 |
+| 5b | (same) | `sim/phase5/run.sh headless linux` | `sim/phase5/phase5_test.py --linux --flight` | 30/30, about 15 min |
+
+Stop the simulator with `sim/phase5/run.sh stop` (Phase 5) or `quit` on the monitor port. Do not `kill` it: the process returns before Renode exits, and a restart then races for the ports.
+
+Order matters when you start from nothing: build the NuttX or PX4 image **and** the Linux image before the first run that needs both (`sw/build-linux.sh` is the slow one, so start it first and let it run while you do the NuttX phases).
+
+## Step 6: how the build scripts help you
+
+You never apply patches by hand.
+
+| Script | What it does that you would otherwise do |
+|---|---|
+| `sw/build-nuttx.sh [config]` | Applies `sw/patches/*.patch` to `sw/nuttx` once and records them in `sw/out/patch-stamps/`; links `sw/chipwings-apps` and `examples/nuttx` into `sw/apps`; runs `tools/configure.sh icicle:nsh`; replaces `.config` with `sw/configs/<config>/defconfig`; builds; copies the ELF to `sw/out/<config>/` |
+| `sw/build-linux.sh [target]` | First run: `make chipwings_mpfs_linux_defconfig` in `sw/br2-out` with our external tree; then `make`. Pass any Buildroot target, for example `linux-rebuild all` after a device tree change |
+| `sw/build-px4.sh [--toolchain]` | Creates the `riscv64-unknown-elf-*` wrapper scripts, copies `sw/px4-chipwings/` over `sw/px4/`, applies `sw/px4-patches/` and the NuttX-fork patches once, clears stale NuttX objects when a defconfig changes, builds `chipwings_mpfs-hart1_default` |
+
+The "applied once" rule uses a stamp file, because a later patch can change an earlier patch's context, after which neither `git apply --check` nor `--check --reverse` accepts the earlier one on its own. If a script stops with "patch neither applies nor is already applied", someone edited the upstream tree by hand: restore the file with `git -C sw/nuttx checkout <file>`, delete the matching line in `sw/out/patch-stamps/`, and rerun.
+
+## Step 7: common failures
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Renode quits right after the script ends | `--console` with stdin at end-of-file | Use `-P <port>` and `--disable-gui` (the `run.sh` scripts do) |
+| Port 33456/33457/33458 already in use | An earlier Renode is still running | `sim/phase5/run.sh stop`, or `telnet localhost 33456` then `quit` |
+| Script command seems ignored | Renode's monitor serves one telnet connection at a time | Close other monitor sessions |
+| `curl` TLS reset on GitHub or antmicro | Flaky network | `curl --retry 5 --retry-all-errors` |
+| PX4 build uses Vivado's `ninja` | Vivado's directory is early in `PATH` | `build-px4.sh` already puts `/usr/bin` first; check you did not override `PATH` |
+| NuttX crash after changing a PX4 board defconfig (NULL function pointer in `uart_open`) | Old objects built under the old config | `build-px4.sh` deletes them; if you build by hand, remove every NuttX `.o` |
+| OpenSBI jumps to the wrong address | Built at address 0 | Run `sw/build-linux.sh opensbi-dirclean` then rebuild |
+| Test script says the boot lines are missing | `dmesg` scrolled | Run the Phase 5 suite once per boot, on a fresh boot |
+| Linux run is extremely slow after a panic | Spinning harts slow Renode to about 0.03x | Stop and restart |
+
+## Step 8: where to go next
+
+- To **understand** what each edit does, read the phase lessons in order. Each has an "Exact changes" section with the real diffs.
+- To **redo the work yourself**, follow the "Replicate step by step" section of each phase lesson: it creates the same files from nothing, in the order we created them.
+- To **find a file**, use the catalogue (lesson 9).

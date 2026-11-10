@@ -101,6 +101,249 @@ The `clkcfg` driver reads an MSS PLL that Renode does not model, computed zero r
 
 `riscv-plic: Invalid cpuid for context 2` refers to the PLIC context of hart 1, which Linux does not use.
 
+## Replicate step by step
+
+Assumes `sw/buildroot` is Buildroot 2026.02.3 ([setup lesson](../setup-from-scratch/)).
+
+**1. Create the external tree skeleton.** A Buildroot external tree needs three files at its root:
+
+```sh
+mkdir -p sw/br2-chipwings/{configs,board/mpfs-linux/dts/microchip,package/chipwings-examples,patches/opensbi}
+```
+
+`sw/br2-chipwings/external.desc`:
+
+```text
+name: CHIPWINGS
+desc: Chipwings single-chip UAV: Linux side (U54 harts 2-4) of the PolarFire SoC AMP system
+```
+
+`sw/br2-chipwings/external.mk`:
+
+```make
+include $(sort $(wildcard $(BR2_EXTERNAL_CHIPWINGS_PATH)/package/*/*.mk))
+```
+
+`sw/br2-chipwings/Config.in`:
+
+```text
+source "$BR2_EXTERNAL_CHIPWINGS_PATH/package/chipwings-examples/Config.in"
+```
+
+`name: CHIPWINGS` is what makes the variable `BR2_EXTERNAL_CHIPWINGS_PATH` exist. The `.mk` and `Config.in` pull in each package under `package/` (our test-program package, added in Phase 4).
+
+**2. Create the defconfig** `sw/br2-chipwings/configs/chipwings_mpfs_linux_defconfig`. Start from Buildroot's board file and change what the table below says:
+
+```sh
+cp sw/buildroot/configs/microchip_mpfs_icicle_defconfig sw/br2-chipwings/configs/chipwings_mpfs_linux_defconfig
+```
+
+**3. Create the kernel fragment** `sw/br2-chipwings/board/mpfs-linux/linux.fragment` with one line, `CONFIG_BLK_DEV_INITRD=y`.
+
+**4. Create the device tree** `sw/br2-chipwings/board/mpfs-linux/dts/microchip/chipwings-mpfs-linux.dts` (listing below).
+
+**5. Write `sw/build-linux.sh`** (listing below), then:
+
+```sh
+sw/build-linux.sh
+ls sw/br2-out/images        # fw_jump.elf  Image  chipwings-mpfs-linux.dtb  (and others)
+```
+
+**6. Write `sim/phase2/linux-harts234.resc` and `run.sh`** (listing below) and run:
+
+```sh
+sim/phase2/run.sh headless
+telnet localhost 33458       # root / root; then: nproc ; grep -i hart /proc/cpuinfo ; grep Reserved /proc/iomem
+```
+
+## Exact changes, line by line
+
+### 1. The defconfig versus Buildroot's own
+
+`chipwings_mpfs_linux_defconfig` against `microchip_mpfs_icicle_defconfig` (comments aside):
+
+```diff
+-BR2_GLOBAL_PATCH_DIR="board/microchip/mpfs_icicle/patches"
++BR2_GLOBAL_PATCH_DIR="board/microchip/mpfs_icicle/patches $(BR2_EXTERNAL_CHIPWINGS_PATH)/patches"
+-BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="board/microchip/mpfs_icicle/linux.fragment"
++BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="board/microchip/mpfs_icicle/linux.fragment $(BR2_EXTERNAL_CHIPWINGS_PATH)/board/mpfs-linux/linux.fragment"
++BR2_LINUX_KERNEL_CUSTOM_DTS_DIR="$(BR2_EXTERNAL_CHIPWINGS_PATH)/board/mpfs-linux/dts"
+-BR2_LINUX_KERNEL_INTREE_DTS_NAME="microchip/mpfs-icicle-kit microchip/mpfs-icicle-kit-prod"
+ (U-Boot, ext2 image, genimage, HSS payload generator, host mtools, host dosfstools: all removed)
+-BR2_TARGET_GENERIC_HOSTNAME="mpfs_icicle"
++BR2_TARGET_GENERIC_HOSTNAME="chipwings"
++BR2_TARGET_GENERIC_ISSUE="Chipwings Linux (U54 harts 2-4)"
++BR2_TARGET_GENERIC_ROOT_PASSWD="root"
++BR2_TARGET_GENERIC_GETTY_PORT="ttyS3"
++BR2_TARGET_ROOTFS_CPIO=y
++BR2_TARGET_ROOTFS_INITRAMFS=y
++BR2_TARGET_OPENSBI=y
++BR2_TARGET_OPENSBI_PLAT="generic"
++BR2_TARGET_OPENSBI_ADDITIONAL_VARIABLES="FW_TEXT_START=0x80000000 FW_JUMP_FDT_ADDR=0x8a000000"
++BR2_TOOLCHAIN_EXTERNAL=y
++BR2_TOOLCHAIN_EXTERNAL_BOOTLIN=y
++BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_RISCV64_LP64D_GLIBC_STABLE=y
++BR2_PACKAGE_CHIPWINGS_EXAMPLES=y        (added in Phase 4)
++BR2_PACKAGE_STRESS_NG=y                 (added in Phase 5)
+```
+
+| Change | Why |
+|---|---|
+| Keep Buildroot's patch directory **and** add ours | Microchip's board patches to the kernel and headers are still wanted. Ours (`patches/opensbi/`) adds the OpenSBI extension in Phase 4. Buildroot applies every `*.patch` found under `<patch dir>/<package name>/`. |
+| Keep Microchip's kernel fragment **and** add ours | Their fragment sets `CONFIG_POLARFIRE_SOC_DMA_NONCOHERENT`. Ours adds options on top. |
+| `CUSTOM_DTS_DIR` instead of the in-tree Icicle device trees | We use our own device tree. Buildroot copies it into the kernel tree and builds it. |
+| Remove U-Boot, genimage, HSS payload tools, ext2 | In Renode nothing needs them: we load the pieces straight into DDR. |
+| `ROOTFS_INITRAMFS` (+ `CPIO`) | The root filesystem is packed **into** the kernel `Image`, so no disk is needed. |
+| `GETTY_PORT="ttyS3"` | Login prompt on MMUART3. MMUART1 is NuttX's. |
+| `OPENSBI` with `FW_TEXT_START=0x80000000` and `FW_JUMP_FDT_ADDR=0x8a000000` | The firmware that runs on harts 2-4, linked at the address Renode loads it to, passing the device tree at `0x8A000000`. |
+| Bootlin external toolchain | Prebuilt glibc compiler: skips building GCC. |
+
+### 2. Kernel fragment `board/mpfs-linux/linux.fragment`
+
+```text
+CONFIG_BLK_DEV_INITRD=y
+```
+
+Without it the kernel ignores an embedded initramfs. (Later phases append `MAGIC_SYSRQ` and `RPMSG_TTY`, see lesson 8.)
+
+### 3. Device tree `chipwings-mpfs-linux.dts`
+
+The file includes only the SoC description, not the full Icicle Kit board tree, because that tree enables PCIe, USB, the system controller and fabric IP that Renode does not model, and it maps the high DDR alias where NuttX would be.
+
+```dts
+/dts-v1/;
+#include "mpfs.dtsi"
+#include <dt-bindings/mailbox/miv-ihc.h>
+
+/ {
+	model = "Chipwings PolarFire SoC: Linux on U54 harts 2-4";
+	compatible = "chipwings,mpfs-linux", "microchip,mpfs";
+
+	aliases { serial3 = &mmuart3; };
+
+	chosen {
+		bootargs = "earlycon console=ttyS3,115200";
+		stdout-path = "serial3:115200n8";
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x40000000>;     /* 1 GiB: what Renode models */
+	};
+```
+
+| Part | Why |
+|---|---|
+| `compatible = "chipwings,mpfs-linux", "microchip,mpfs"` | Generic OpenSBI matches `microchip,mpfs` (our Phase 4 extension keys off it). |
+| `serial3` alias, `bootargs`, `stdout-path` | The console is MMUART3 at 115200. |
+| `memory@80000000` 1 GiB | Matches Renode's DDR. |
+
+```dts
+	reserved-memory {
+		ranges;
+		nuttx: nuttx@a2000000        { reg = <0x0 0xa2000000 0x0 0x300000>; no-map; };
+		rsctable: rsc-table@a2300000 { reg = <0x0 0xa2300000 0x0 0x1000>;   no-map; };
+		nuttx_spare0: nuttx-spare@a2301000 { reg = <0x0 0xa2301000 0x0 0xff000>; no-map; };
+		vdev0vring0: vdev0vring0@a2400000  { reg = <0x0 0xa2400000 0x0 0x8000>; no-map; };
+		vdev0vring1: vdev0vring1@a2408000  { reg = <0x0 0xa2408000 0x0 0x8000>; no-map; };
+		vdev0buffer: vdev0buffer@a2410000  { compatible = "shared-dma-pool";
+		                                     reg = <0x0 0xa2410000 0x0 0x40000>; no-map; };
+		nuttx_spare1: nuttx-spare@a2450000 { reg = <0x0 0xa2450000 0x0 0x1bf0000>; no-map; };
+	};
+```
+
+`no-map` means Linux never creates a mapping for the region, so no kernel or user code can touch it by accident. The seven blocks together cover `0xA2000000` to `0xA403FFFF`. The spare blocks exist so the whole range is reserved even where nothing lives yet. `vdev0buffer` is a `shared-dma-pool` because Linux allocates its RPMsg buffers from it. (These regions are used from Phase 3 on; Phase 2 only needs them to exist so `/proc/iomem` shows them.)
+
+```dts
+&cpu1 { status = "disabled"; };
+```
+
+Linux must never start hart 1 or schedule on it. Disabling the CPU node removes it from `/proc/cpuinfo` and from the scheduler.
+
+```dts
+&clint {
+	interrupts-extended = <&cpu0_intc 3>, <&cpu0_intc 7>,
+			      <&cpu1_intc 3>, <&cpu1_intc 7>,
+			      <&cpu2_intc 3>, <&cpu2_intc 7>,
+			      <&cpu3_intc 3>, <&cpu3_intc 7>,
+			      <&cpu4_intc 3>, <&cpu4_intc 7>;
+};
+```
+
+The upstream `mpfs.dtsi` gives the E51 `0xffffffff` placeholders here. OpenSBI works out which hart owns CLINT slot 0 from the first real entry, found hart 1, and shifted every hart by one. Listing the E51's interrupts (3 = software, 7 = timer) puts slot N at hart N. **This is the fix described in the "CLINT slot mapping" section above.**
+
+```dts
+&refclk { clock-frequency = <125000000>; };
+&clkcfg { status = "disabled"; };
+&syscontroller { status = "disabled"; };
+
+&mmuart3 {
+	/delete-property/ clocks;
+	clock-frequency = <150000000>;
+	status = "okay";
+};
+```
+
+These four blocks are **Renode only**: Renode has no model of the clock/reset controller (`clkcfg` computed zero rates and held MMUART3 in reset) or of the system controller's mailbox. `/delete-property/ clocks` removes the reference to the disabled clock controller and a fixed 150 MHz is given instead. On the Icicle Kit, HSS enables the clocks and releases the resets, so these must be reverted.
+
+### 4. `sw/build-linux.sh`
+
+```sh
+SW=$(cd "$(dirname "$0")" && pwd)
+BR="make -C $SW/buildroot O=$SW/br2-out BR2_EXTERNAL=$SW/br2-chipwings"
+
+[ -f "$SW/br2-out/.config" ] || $BR chipwings_mpfs_linux_defconfig
+if [ $# -eq 0 ]; then $BR; else $BR "$@"; fi
+ls -la "$SW/br2-out/images"
+```
+
+| Part | Meaning |
+|---|---|
+| `O=$SW/br2-out` | All build output goes to `sw/br2-out`; the Buildroot tree is never dirtied. |
+| `BR2_EXTERNAL=$SW/br2-chipwings` | Activate our external tree. |
+| first line after `BR=` | Configure only the first time (no `.config` yet). |
+| `$BR "$@"` | Pass-through: `./build-linux.sh linux-rebuild all` runs that Buildroot target. |
+
+Useful targets: `linux-rebuild all` after a device tree or kernel option change (`all` re-packs the initramfs into `Image`), `opensbi-dirclean` before rebuilding OpenSBI with different link addresses, `menuconfig` and `savedefconfig` to edit and save the Buildroot config.
+
+### 5. `sim/phase2/linux-harts234.resc`
+
+```text
+include $ORIGIN/../peripherals/SafeIrqRiscV64.cs
+include $ORIGIN/../peripherals/SafeIpiCoreLevelInterruptor.cs
+include $ORIGIN/../peripherals/MiV_IHC.cs
+
+mach create "uav"
+machine LoadPlatformDescription $ORIGIN/../platforms/chipwings-mpfs.repl
+logLevel 3
+
+e51 IsHalted true
+u54_1 IsHalted true
+
+macro reset
+"""
+    sysbus LoadELF $opensbi false u54_2
+    sysbus LoadBinary $kernel 0x80200000
+    sysbus LoadBinary $dtb 0x8a000000
+    u54_3 PC 0x80000000
+    u54_4 PC 0x80000000
+    u54_2 SetRegisterUlong 11 0x8a000000
+    u54_3 SetRegisterUlong 11 0x8a000000
+    u54_4 SetRegisterUlong 11 0x8a000000
+"""
+runMacro $reset
+```
+
+| Line | Meaning |
+|---|---|
+| `include ... .cs` | Renode compiles these C# files when the script loads. They are the three simulator fixes (lesson 6); Phase 2 already uses the fixed CPU and CLINT. |
+| `LoadPlatformDescription .../chipwings-mpfs.repl` | Our platform file, not the stock one. |
+| `e51`, `u54_1` halted | Linux owns only harts 2-4. |
+| `LoadELF $opensbi false u54_2` | Load OpenSBI and start hart 2 at its entry (`0x80000000`). |
+| `LoadBinary $kernel 0x80200000`, `LoadBinary $dtb 0x8a000000` | Place the kernel and device tree where `fw_jump` expects them (`FW_JUMP_ADDR` default and `FW_JUMP_FDT_ADDR`). |
+| `u54_3 PC`, `u54_4 PC` | Start the other two Linux harts at the same entry. OpenSBI sorts out cold boot versus warm boot by itself. |
+| `SetRegisterUlong 11 0x8a000000` | Register 11 is `a1`. The RISC-V boot convention passes the device tree address in `a1`. |
+
 ## Files
 
 | File | Change | Reason |

@@ -91,6 +91,232 @@ Important detail for Phase 5: PX4 uses its own NuttX fork (12.12), whose `riscv_
 - GDB: `machine StartGdbServer 3333 false u54_1`. GDB's CSR numbering is wrong for this core; read CSRs in the monitor with `u54_1 GetRegisterUnsafe <65 + csr>`.
 - 187 `plic: Trying to complete irq` errors at boot are NuttX clearing claims; harmless.
 
+## Replicate step by step
+
+Assumes the [setup lesson](../setup-from-scratch/) steps 1-3 are done (`sw/nuttx` and `sw/apps` at `nuttx-13.1.0`).
+
+**1. Apply the timer fix.** The build script does this for you; to do it by hand:
+
+```sh
+git -C sw/nuttx apply ../patches/0001-mpfs-timerisr-fix-double-hart-offset-for-mtimecmp.patch
+git -C sw/nuttx diff --stat        # arch/risc-v/src/mpfs/mpfs_timerisr.c | 7 ++-----
+```
+
+**2. Create the Chipwings apps folder** `sw/chipwings-apps/` with the files in "Exact changes" below (`Makefile`, `Make.defs`, `Kconfig` is generated, and one folder per app).
+
+**3. Create the configuration.** Start from NuttX's own board config and append four lines:
+
+```sh
+mkdir -p sw/configs/nsh-hart1
+cp sw/nuttx/boards/risc-v/mpfs/icicle/configs/nsh/defconfig sw/configs/nsh-hart1/defconfig
+cat >> sw/configs/nsh-hart1/defconfig <<'EOT'
+CONFIG_CANCELLATION_POINTS=y
+CONFIG_CHIPWINGS_HARTINFO=y
+CONFIG_CW_EXAMPLE_THREADS=y
+CONFIG_CW_EXAMPLE_TIMER=y
+EOT
+```
+
+That is the whole difference between our Phase 1 configuration and NuttX's stock `icicle:nsh` (we compared the two with a sorted diff). The last three lines enable our `hartinfo` and the two example programs.
+
+**4. Write `sw/build-nuttx.sh`** (full listing below) and run it:
+
+```sh
+sw/build-nuttx.sh nsh-hart1
+```
+
+Expected last lines: `Built nsh-hart1: .../sw/out/nsh-hart1/nuttx` and a `size` table.
+
+**5. Write the Renode script** `sim/phase1/nuttx-hart1.resc` and launcher `sim/phase1/run.sh` (listing below). Run:
+
+```sh
+sim/phase1/run.sh headless
+telnet localhost 33457            # then: hartinfo   and   ostest
+sim/phase1/check-one-core.sh
+```
+
+Expected `hartinfo` output (the two lines we rely on; the exact ISA letters depend on the core's `misa`):
+
+```text
+Physical hart (mhartid) : 1  U54 application core U54_1
+ISA (misa)              : rv64...
+NuttX SMP               : disabled
+```
+
+`ostest` ends with exit status 0 after all 30 groups, about 4 minutes of host time.
+
+## Exact changes, line by line
+
+### 1. `sw/patches/0001-...patch`
+
+```diff
+--- a/arch/risc-v/src/mpfs/mpfs_timerisr.c
++++ b/arch/risc-v/src/mpfs/mpfs_timerisr.c
+@@ -64,12 +64,13 @@
+ void up_timer_initialize(void)
+ {
+-  /* what is our timecmp address for this hart */
+-
+-  uintptr_t hart_id = up_cpu_index();
++  /* Pass the base mtimecmp address: riscv_mtimer adds the per-hart offset
++   * (8 * up_cpu_index()) itself. ... */
+
+   struct oneshot_lowerhalf_s *lower = riscv_mtimer_initialize(
+-    MPFS_CLINT_MTIME, MPFS_CLINT_MTIMECMP0 + hart_id * sizeof(uintptr_t),
++    MPFS_CLINT_MTIME, MPFS_CLINT_MTIMECMP0,
+     RISCV_IRQ_TIMER, MTIMER_FREQ);
+```
+
+| Removed | Added | Why |
+|---|---|---|
+| `hart_id = up_cpu_index()` and `+ hart_id * sizeof(uintptr_t)` | the plain base `MPFS_CLINT_MTIMECMP0` | `riscv_mtimer_initialize()` computes `mtimecmp + 8 * up_cpu_index()` internally. On hart 1 the old code gave `base + 8` as the base, so the library added 8 again and programmed `base + 16` = `0x02004010`, which is hart 2's comparator. |
+
+How we proved it: in Renode, `g_system_ticks` stayed 0 and the first `usleep()` hung. Reading the CLINT showed hart 2's `mtimecmp` had been written and hart 1's had not.
+
+### 2. The stock-to-ours defconfig delta
+
+`sw/configs/nsh-hart1/defconfig` differs from NuttX's `boards/risc-v/mpfs/icicle/configs/nsh/defconfig` by exactly these four lines (the rest is the same):
+
+```diff
++CONFIG_CANCELLATION_POINTS=y
++CONFIG_CHIPWINGS_HARTINFO=y
++CONFIG_CW_EXAMPLE_THREADS=y
++CONFIG_CW_EXAMPLE_TIMER=y
+```
+
+Notable stock settings you inherit: flat (machine-mode) build, one CPU (no `CONFIG_SMP`), NSH on MMUART1, RAM start `0x80200000`.
+
+### 3. `sw/chipwings-apps/` (new NuttX application folder)
+
+NuttX discovers apps from a `Makefile`, a `Make.defs` and a `Kconfig` in each folder.
+
+`sw/chipwings-apps/Makefile`:
+
+```make
+MENUDESC = "Chipwings"
+include $(APPDIR)/Directory.mk
+```
+
+`sw/chipwings-apps/Make.defs`:
+
+```make
+include $(wildcard $(APPDIR)/chipwings/*/Make.defs)
+```
+
+`MENUDESC` names the menu in `menuconfig`. `Directory.mk` generates the menu `Kconfig` that sources each subfolder's `Kconfig`. `Make.defs` pulls in each app's own `Make.defs`. `build-nuttx.sh` links this folder into the NuttX tree as `apps/chipwings`, which is the path the `$(APPDIR)/chipwings/` lines refer to.
+
+`sw/chipwings-apps/hartinfo/` has `Kconfig`, `Make.defs`, `Makefile` and `hartinfo_main.c`. The core of `hartinfo_main.c`:
+
+```c
+int main(int argc, char *argv[])
+{
+#ifdef CONFIG_ARCH_USE_S_MODE
+  printf("hartinfo: needs a machine-mode (flat) build\n");   /* mhartid traps in S-mode */
+  return 1;
+#else
+  unsigned long hart = READ_CSR(CSR_MHARTID);   /* physical hart number */
+  unsigned long misa = READ_CSR(CSR_MISA);      /* one bit per extension letter */
+  ...
+  printf("Physical hart (mhartid) : %lu  %s", hart, hart_name(hart));
+  ...
+  printf("sched_getcpu()          : %d\n", sched_getcpu());
+#endif
+}
+```
+
+Why it exists: it is the first of our two proofs that NuttX is on hart 1. `/proc/cpuinfo` cannot be used because NuttX numbers harts from 0 (`up_cpu_index()`), which would print `hart : 0`. Reading the `mhartid` CSR gives the physical number. The `misa` register shows the ISA letters, so you also see that the FPU (`f`, `d`) is present on this core.
+
+### 4. `sw/build-nuttx.sh` (the whole script, explained)
+
+```sh
+SW=$(cd "$(dirname "$0")" && pwd)
+CONFIG=${1:-nsh-hart1}
+TOOLCHAIN=${TOOLCHAIN:-$HOME/tools/xpack-riscv-none-elf-gcc-15.2.0-1/bin}
+export PATH=$TOOLCHAIN:$PATH
+```
+
+Pick the config (default `nsh-hart1`) and put the compiler first in `PATH`. NuttX picks the `riscv-none-elf-` prefix on its own.
+
+```sh
+STAMP=$SW/out/patch-stamps/nuttx-13.1
+for p in "$SW"/patches/*.patch; do
+  if git -C "$SW/nuttx" apply --check "$p" 2>/dev/null; then
+    git -C "$SW/nuttx" apply "$p"; echo "$(basename "$p")" >> "$STAMP"
+  elif grep -qxF "$(basename "$p")" "$STAMP" 2>/dev/null; then :
+  elif git -C "$SW/nuttx" apply --check --reverse "$p" 2>/dev/null; then
+    echo "$(basename "$p")" >> "$STAMP"
+  else echo "patch neither applies nor is already applied: $p" >&2; exit 1; fi
+done
+```
+
+For each patch there are four cases: it applies (apply it and record it); it is already recorded (skip); it is already applied but not recorded (record it); none of these (stop, someone edited the tree). The stamp file exists because patch 0003 changes the lines around patch 0002's hunk, so after both are applied neither one can be checked alone.
+
+```sh
+ln -sfn ../chipwings-apps "$SW/apps/chipwings"
+ln -sfn ../../examples/nuttx "$SW/apps/cwexamples"
+```
+
+Make our two app folders appear inside the NuttX apps tree without copying them.
+
+```sh
+cd "$SW/nuttx"
+[ -f .config ] && make distclean > /dev/null
+./tools/configure.sh -l icicle:nsh > /dev/null
+cp "$SW/configs/$CONFIG/defconfig" .config
+make olddefconfig > /dev/null
+```
+
+Start from a clean tree, set up the board, then **replace** the generated `.config` with ours and let Kconfig fill in the defaults (`olddefconfig`). Replacing is what makes each config a single reviewable file.
+
+```sh
+make -j"$(nproc)" "${LDARGS[@]}"
+mkdir -p "$SW/out/$CONFIG"
+cp nuttx nuttx.bin System.map "$SW/out/$CONFIG/"
+```
+
+Build and keep each configuration's output separately, so Phases 1, 3 and 4 can coexist. (`LDARGS` is set in lesson 5, for configs that bring their own linker script.)
+
+### 5. `sim/phase1/nuttx-hart1.resc`
+
+```text
+$nuttx?=$ORIGIN/../../sw/nuttx/nuttx
+$nshport?=33457
+$uartlog?=$ORIGIN/logs/nuttx-mmuart1.log
+
+using sysbus
+mach create "uav"
+machine LoadPlatformDescription @platforms/cpus/polarfire-soc.repl
+logLevel 3
+
+e51 IsHalted true
+u54_2 IsHalted true
+u54_3 IsHalted true
+u54_4 IsHalted true
+
+macro reset
+"""
+    sysbus LoadELF $nuttx false u54_1
+"""
+runMacro $reset
+
+mmuart1 CreateFileBackend $uartlog true
+emulation CreateServerSocketTerminal $nshport "nsh" false
+connector Connect mmuart1 nsh
+```
+
+| Line | Meaning |
+|---|---|
+| `$nuttx?=...` | `?=` sets a default only if the variable was not set on the command line, so `run.sh` can override the port. |
+| `e51 IsHalted true` and `u54_2..4` | Those harts never execute. This is what makes "only hart 1 runs" checkable. |
+| `LoadELF $nuttx false u54_1` | Load the ELF; `false` = use physical addresses; the last argument also sets the **PC of `u54_1`** to the ELF entry. |
+| `CreateServerSocketTerminal` + `connector Connect` | Make MMUART1 appear as a telnet server on port 33457. |
+
+The 187 `plic: Trying to complete irq` errors at boot are NuttX's PLIC init completing every IRQ number "in case of warm reboot". Real hardware ignores them. Renode's highest log level is ERROR, so they cannot be silenced.
+
+### 6. `sim/phase1/check-one-core.sh`
+
+It asks the Renode monitor (port 33456) for each core's halted state and executed-instruction count, and prints one line per core. Proof that only `u54_1` ran: the E51 and `u54_2..4` report `halted` with 0 instructions at PC `0x1000` (Renode's reset vector).
+
 ## Files
 
 | File | Change | Reason |

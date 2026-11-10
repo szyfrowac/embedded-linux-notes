@@ -58,6 +58,86 @@ Note what the stock Linux demo does: it puts Linux on all four U54 cores. Our de
 | Headless runs | `--console` with stdin at end-of-file makes Renode quit when the script ends | Use `-P <port>` for long sessions; errors show only on the console or telnet monitor |
 | Downloads | TLS resets from GitHub and antmicro | `curl --retry 5 --retry-all-errors` |
 
+## Replicate step by step
+
+1. Install Renode and download the images, as in the [setup lesson](../setup-from-scratch/) steps 1 and 4. Check the SHA1 sums: the 40 hex digits at the end of each download URL are the hash.
+2. Create the folders: `mkdir -p sim/phase0/logs`.
+3. Create `sim/phase0/freertos-smoke.resc` (below), then run it.
+4. Create `sim/phase0/icicle-linux.resc` (below), then run it.
+5. Look at the logs. For FreeRTOS, `sim/phase0/logs/freertos-mmuart0.log` should show the lwIP and web server start-up. For Linux, `icicle-mmuart1-linux.log` ends at a login prompt and `icicle-mmuart0-hss.log` shows the HSS boot messages.
+
+```sh
+R=~/tools/renode_1.17.0-portable/renode
+$R --console --disable-gui sim/phase0/freertos-smoke.resc < /dev/null
+$R --disable-gui -P 33456 sim/phase0/icicle-linux.resc
+```
+
+## Exact files, line by line
+
+Nothing in this phase changes vendor code. What we *wrote* are two Renode scripts. Both are the stock Antmicro scripts rewritten so that they work from any directory and do not download anything.
+
+### `sim/phase0/freertos-smoke.resc`
+
+```text
+using sysbus
+mach create "pse"
+machine LoadPlatformDescription @platforms/cpus/polarfire-soc.repl
+
+logLevel 3
+
+sysbus LoadELF $ORIGIN/../images/pse-freertos-lwip.elf
+
+mmuart0 CreateFileBackend $ORIGIN/logs/freertos-mmuart0.log true
+emulation RunFor "3"
+q
+```
+
+| Line | Meaning |
+|---|---|
+| `mach create "pse"` | A new simulated machine. The name only labels it. |
+| `LoadPlatformDescription @platforms/cpus/polarfire-soc.repl` | Loads Renode's own PolarFire SoC model (five harts, CLINT, PLIC, UARTs, DDR). The `@` means "relative to Renode's install folder". |
+| `logLevel 3` | Show errors only. At the default, the model logs a warning for nearly every register access: 7.6 GB in 3 s. |
+| `LoadELF $ORIGIN/...` | `$ORIGIN` is the folder of the script. No leading `@` here, or the variable is not expanded. |
+| `mmuart0 CreateFileBackend ... true` | Write everything the program prints on UART 0 to a file. `true` means "also flush on every write". |
+| `emulation RunFor "3"` | Run three seconds of virtual time. |
+| `q` | Quit. This is why the headless run needs stdin at end-of-file. |
+
+The stock script starts with `$bin?=@https://...`, a variable with a download URL. We replaced it by a local path. If you `include` the stock script instead, Renode downloads every such URL even when you set the variable first.
+
+### `sim/phase0/icicle-linux.resc`
+
+```text
+$images=$ORIGIN/../images
+using sysbus
+mach create "icicle"
+machine LoadPlatformDescription @platforms/cpus/polarfire-soc.repl
+logLevel 3
+
+machine SdCardFromFile $images/icicle-emmc.img mmc 0x100000000 false
+
+macro reset
+"""
+    sysbus LoadELF $images/icicle-hss.elf
+    sysbus LoadBinary $images/icicle-fitImage.fit 0x88300000
+    sysbus LoadSymbolsFrom $images/icicle-vmlinux
+    sysbus LoadSymbolsFrom $images/icicle-u-boot
+"""
+runMacro $reset
+
+mmuart0 CreateFileBackend $ORIGIN/logs/icicle-mmuart0-hss.log true
+mmuart1 CreateFileBackend $ORIGIN/logs/icicle-mmuart1-linux.log true
+```
+
+| Line | Meaning |
+|---|---|
+| `SdCardFromFile ... mmc 0x100000000 false` | The eMMC image is attached to the MMC controller at that address. HSS reads its payload from here. |
+| `LoadELF icicle-hss.elf` | HSS is the program that runs first on the E51, exactly as on the board. It then starts U-Boot and Linux on the U54 cores. |
+| `LoadBinary ... 0x88300000` | The FIT image (kernel, device tree, initramfs) goes where HSS expects it. |
+| `LoadSymbolsFrom` | Debug symbols only, no code is loaded. Useful when you attach GDB. |
+| `macro reset` ... `runMacro $reset` | Renode runs the macro now and again whenever you `machine Reset`, so the loads repeat after a reset. |
+
+The point of this phase is the *difference* with what comes later: here the **E51 is active and HSS boots everything**. From Phase 1 on, our scripts halt the E51 and load programs straight into memory, because we do not have an HSS build for our payloads yet. That gap is issue 5 in lesson 10.
+
 ## Files
 
 | File | Why |

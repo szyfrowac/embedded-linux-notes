@@ -52,6 +52,141 @@ Results:
 
 The slower `ostest` is expected: Renode shares host CPU between the harts.
 
+## Replicate step by step
+
+Assumes Phases 1 and 2 work (`sw/out/nsh-hart1` is not needed, but the Linux images in `sw/br2-out/images` are).
+
+**1. Create the config folder** with a copy of the Phase 1 config and one changed line:
+
+```sh
+mkdir -p sw/configs/nsh-amp-hart1
+cp sw/configs/nsh-hart1/defconfig sw/configs/nsh-amp-hart1/defconfig
+sed -i 's/^CONFIG_RAM_START=.*/CONFIG_RAM_START=0xa2200000/' sw/configs/nsh-amp-hart1/defconfig
+```
+
+**2. Write the linker script** `sw/configs/nsh-amp-hart1/ld.script` by copying the board's script and editing it:
+
+```sh
+cp sw/nuttx/boards/risc-v/mpfs/icicle/scripts/ld-ihc.script sw/configs/nsh-amp-hart1/ld.script
+```
+
+Then in `ld.script`: change `progmem` to `LENGTH = 2M`, delete the `filler` and `shared` memory lines, and delete the `.filler_area` and `.amp_ihc` output sections (details below).
+
+**3. Add the `ld.script` support to `build-nuttx.sh`** (the `LDARGS` block below).
+
+**4. Build and run:**
+
+```sh
+sw/build-nuttx.sh nsh-amp-hart1
+file sw/out/nsh-amp-hart1/nuttx          # entry point 0xa2000000
+sim/phase3/run.sh headless
+sim/phase1/check-one-core.sh
+```
+
+Expected: both `nsh>` and a Linux login prompt within a few seconds of host time. In `check-one-core.sh`: the E51 halted with 0 instructions, `u54_1` executing at `0xA2xxxxxx`, `u54_2..4` inside the kernel.
+
+## Exact changes, line by line
+
+### 1. `sw/configs/nsh-amp-hart1/defconfig`
+
+One line differs from `nsh-hart1`:
+
+```diff
+-CONFIG_RAM_START=0x80200000
++CONFIG_RAM_START=0xa2200000
+```
+
+NuttX's data and heap move to `0xA2200000`, inside the first reserved region in the Linux device tree. Code moves via the linker script, because `RAM_START` only describes data memory.
+
+### 2. `sw/configs/nsh-amp-hart1/ld.script` versus the board's `ld-ihc.script`
+
+```diff
+ MEMORY
+ {
+-    progmem (rx) : ORIGIN = 0xa2000000, LENGTH = 1M    /* w/ cache */
+-    filler  (rx) : ORIGIN = 0xa2100000, LENGTH = 524k
++    progmem (rx) : ORIGIN = 0xa2000000, LENGTH = 2M    /* w/ cache */
+     sram   (rwx) : ORIGIN = 0xa2200000, LENGTH = 1M    /* w/ cache */
+-    shared (rwx) : ORIGIN = 0xa4000000, LENGTH = 256k
+ }
+```
+
+and the two output sections `.filler_area` and `.amp_ihc`, with their `__filler_area_*` and `__amp_ihc_*` symbols, are deleted.
+
+| Change | Why |
+|---|---|
+| `progmem` 1 MiB to 2 MiB | Matches the code space the Linux device tree reserves for NuttX (`0xA2000000`-`0xA21FFFFF`, then 1 MiB of RAM; 3 MiB in total). |
+| remove `filler` | It belongs to Microchip's board AMP demo (NuttX's `mpfs_ihc.c` declares an `unused_filler` array for that section). Our layout does not use it. |
+| remove `shared` at `0xA4000000` and `.amp_ihc` | That region was the board demo's shared memory. Our shared rings live in the block that starts at `0xA2300000` and that the Linux device tree reserves (Phase 4). |
+| keep `sram` at `0xA2200000`, 1 MiB | Must equal `CONFIG_RAM_START` above. |
+
+If these two disagree, NuttX boots into memory that Linux owns, or fails silently. The first check after a change is `file sw/out/<config>/nuttx` for the entry point and `riscv-none-elf-size` for section addresses.
+
+### 3. `build-nuttx.sh`: honouring a config's own linker script
+
+```sh
+LDARGS=()
+if [ -f "$SW/configs/$CONFIG/ld.script" ]; then
+  cp "$SW/configs/$CONFIG/ld.script" boards/risc-v/mpfs/icicle/scripts/ld-chipwings.script
+  LDARGS=(ARCHSCRIPT="$SW/nuttx/boards/risc-v/mpfs/icicle/scripts/ld-chipwings.script")
+fi
+make -j"$(nproc)" "${LDARGS[@]}"
+```
+
+| Line | Meaning |
+|---|---|
+| `[ -f .../ld.script ]` | Only configs that bring their own script use this; `nsh-hart1` does not. |
+| `cp ... ld-chipwings.script` | Copy it into the board's script folder. NuttX preprocesses the script into a `.tmp` next to it, and keeping it inside the tree avoids writing into our directories. |
+| `ARCHSCRIPT=...` on the `make` command line | The board's `Make.defs` sets `ARCHSCRIPT`; a value given on the command line overrides the makefile's own. This is how we change the linker script **without editing the NuttX tree**. |
+
+### 4. `sim/phase3/amp.resc`
+
+Phase 1 and Phase 2 in one machine:
+
+```text
+e51 IsHalted true
+
+macro reset
+"""
+    sysbus LoadELF $nuttx false u54_1
+    sysbus LoadELF $opensbi false u54_2
+    sysbus LoadBinary $kernel 0x80200000
+    sysbus LoadBinary $dtb 0x8a000000
+    u54_3 PC 0x80000000
+    u54_4 PC 0x80000000
+    u54_2 SetRegisterUlong 11 0x8a000000
+    u54_3 SetRegisterUlong 11 0x8a000000
+    u54_4 SetRegisterUlong 11 0x8a000000
+"""
+runMacro $reset
+
+mmuart1 CreateFileBackend $nshlog true
+emulation CreateServerSocketTerminal $nshport "nsh" false
+connector Connect mmuart1 nsh
+
+mmuart3 CreateFileBackend $linuxlog true
+emulation CreateServerSocketTerminal $linuxport "linux" false
+connector Connect mmuart3 linux
+```
+
+| Difference from Phase 1 or 2 | Why |
+|---|---|
+| Only `e51` is halted | All four U54s run now. |
+| `LoadELF $nuttx false u54_1` | NuttX is the ELF linked at `0xA2000000`; `LoadELF` puts it there and sets hart 1's PC to its entry. |
+| Two terminals | MMUART1 for NuttX, MMUART3 for Linux, each logged to its own file in `sim/phase3/logs/`. |
+
+### 5. How the isolation test was run
+
+```sh
+# In Linux (telnet localhost 33458), three busy loops:
+for i in 1 2 3; do (while :; do :; done) & done
+
+# At the same time in NSH (telnet localhost 33457):
+nsh> ostest
+```
+
+Afterwards, in Linux: `dmesg | grep -i -E "rcu|soft lockup|oops"` must print nothing, and `grep riscv-timer /proc/interrupts` should show nearly equal counts for the three CPUs.
+
 ## Files
 
 | File | Change | Reason |

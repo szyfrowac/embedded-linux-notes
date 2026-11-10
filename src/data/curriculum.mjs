@@ -150,6 +150,7 @@ export const chipwings = {
   summary: 'One PolarFire SoC, two operating systems: a PX4 flight controller on NuttX and Linux for the mission computer, built and tested phase by phase in Renode.',
   lessons: [
     { slug: 'chipwings/00-overview', label: 'Overview: why, how, what we changed' },
+    { slug: 'chipwings/setup-from-scratch', label: 'Replication guide: set up and run' },
     { slug: 'chipwings/01-architecture', label: '1. Architecture and memory map' },
     { slug: 'chipwings/02-phase0-renode', label: '2. Phase 0: Renode baseline' },
     { slug: 'chipwings/03-phase1-nuttx', label: '3. Phase 1: NuttX on hart 1' },
