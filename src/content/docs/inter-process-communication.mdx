@@ -85,7 +85,7 @@ Because the socket is a file, ordinary permissions decide who may connect. Run t
 
 ## From processes to cores
 
-On a heterogeneous chip, the same idea crosses CPU boundaries. In the [Chipwings case study](../polarfire-soc-chipwings-amp-guide/), NuttX on one core and Linux on the others exchange messages over RPMsg. On the Linux side the channel appears as a character device (for example `/dev/rpmsg0` or `/dev/ttyRPMSG0`), so a Linux program talks to the real-time core with the same `read` and `write` calls you used above.
+On a heterogeneous chip, the same idea crosses CPU boundaries. In the [Chipwings module](../chipwings/06-phase4-rpmsg/), NuttX on one core and Linux on the others exchange messages over RPMsg. On the Linux side the channel appears as a character device (for example `/dev/rpmsg0` or `/dev/ttyRPMSG0`), so a Linux program talks to the real-time core with the same `read` and `write` calls you used above.
 
 <Exercise
   title="Two clients, one daemon"

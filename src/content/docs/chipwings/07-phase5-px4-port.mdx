@@ -1,0 +1,141 @@
+---
+title: "7. Phase 5: porting PX4 to hart 1"
+description: "How PX4 was ported to the PolarFire SoC: the chip layer, the board, the toolchain shim, the PX4 and NuttX-fork patches, and the stack-size bug found with the closed-loop simulation."
+lesson:
+  module: "Chipwings module"
+  level: Advanced
+  time: "45 min"
+---
+
+import LearningObjectives from '../../../components/LearningObjectives.astro';
+import Flow from '../../../components/diagrams/Flow.astro';
+
+<LearningObjectives outcomes={[
+  "Explain why the port follows PX4's STM32 layout and where our code sits in the PX4 tree.",
+  "Describe what the chip layer provides (hrt, version, reset) and how the HRT timer works.",
+  "List the six PX4 patches and the NuttX patches applied to PX4's fork, with the reason for each.",
+  "Explain the stack-size bug and why it showed up as a heap assertion."
+]} />
+
+## Why
+
+Phase 5 claims: *PX4 runs the flight loop on hart 1, closed-loop, with Linux present and with Linux dead.* Phases 1-4 used the NuttX shell as the workload. Now the workload is a real flight stack.
+
+**Why follow the STM32 port.** PX4's native target is STM32 on NuttX. A minimal custom port would work for a demo but diverge from upstream; mirroring the STM32 layout means we reuse PX4's common code (callout queue, latency counters, board hooks) and a PX4 developer can read our port. So `platforms/nuttx/src/px4/microchip/{microchip_common,mpfs}` mirror `stm/{stm32_common,stm32h7}`, and the board `boards/chipwings/mpfs-hart1` mirrors `boards/px4/fmu-v6x`.
+
+## How: the steps
+
+<Flow
+  caption="Phase 5 in nine steps. This lesson covers steps 1-7; lesson 8 covers 8 and 9."
+  steps={[
+    { "label": "1", "detail": "Build setup", "items": ["venv, submodules", "toolchain shim"] },
+    { "label": "2-4", "detail": "Chip layer and board", "items": ["hrt, version, reset", "board files", "px4.elf links"] },
+    { "label": "5", "detail": "First boot", "items": ["PX4 alone", "13/13 checks"] },
+    { "label": "6", "detail": "RPMsg back on", "items": ["Linux attached", "2000/2000"] },
+    { "label": "7", "detail": "Closed loop (SIH)", "items": ["EKF2, arm, takeoff", "stress-ng, panic"] },
+    { "label": "8-9", "detail": "MAVLink and tests", "items": ["See lesson 8"] }
+  ]}
+/>
+
+### Step 1: build setup
+
+PX4 `main` at `5f429033` is in `sw/px4` with PX4's NuttX fork (`e5a23078`). To keep the clone clean, our port lives **outside** it:
+
+- `sw/px4-chipwings/` is **copied over** the PX4 tree by `build-px4.sh` (new files only).
+- `sw/px4-patches/*.patch` are **applied once** to edit existing PX4 files.
+
+Environment details that cost time:
+
+| Problem | Solution |
+|---|---|
+| PX4 hard-codes the `riscv64-unknown-elf-` compiler prefix; we use xPack `riscv-none-elf-` | `build-px4.sh` generates `sw/out/px4-toolchain/` with wrapper scripts (not symlinks: GCC finds `cc1` and multilibs relative to its own path) |
+| `python3-venv` needs sudo, not available | `python3 -m venv --without-pip`, then pip from `get-pip.py`; venv in `sw/px4-venv` |
+| Vivado's directory has its own `ninja` | `build-px4.sh` puts `/usr/bin` first in `PATH` |
+| Stale objects after a NuttX config change crashed `uart_open` (NULL function pointer) | The script deletes every NuttX `.o` when the hash of the board defconfigs changes |
+
+`./build-px4.sh --toolchain` checks compiler, ABI and the venv.
+
+### Steps 2-4: chip layer and board
+
+| Piece | What it does |
+|---|---|
+| `hrt/` | The high-resolution timer. **Time** is CLINT `mtime` (1 MHz, 64 bit, never wraps, shared with Linux). **Deadlines** use MSS Timer 1 in one-shot mode, loaded with `deadline - now`, interrupt on PLIC 82. STM32's callout queue and latency code are reused unchanged. |
+| `version/` | Board UUID from the 128-bit device serial number (read once via the system controller). Renode has no system controller and returns zeros, so the fallback ID is `chipwings-renode`. |
+| `board_reset/` | `reboot` support. |
+| `board_critmon/` | Empty on purpose: NuttX 12's critmon uses `perf_gettime()` and PX4 only needs the target to link. |
+| `include/px4_arch/*.h` | Micro-HAL, hardware description headers (no SPI/I2C yet). |
+| Board `src/init.cpp` | `mpfs_boardinitialize` and `board_app_initialize`. PX4's NuttX build compiles no NuttX board sources, so the hooks the icicle board provided must live here. |
+| Board `init/rc.board_early` | Parameters and logs on a RAM file system (`mount -t tmpfs /fs/microsd`): no SD card on hart 1, lost at reset. |
+| Board `nuttx-config/scripts/script.ld` | Explicit program headers: otherwise the writable `.init_array` makes the code segment RWX. |
+
+Result: `px4.elf` links, 491 KiB of code, no warnings.
+
+### Patches applied to PX4
+
+| # | File | Reason |
+|---|---|---|
+| 0001 | `platforms/nuttx/cmake/px4_impl_os.cmake` | Detect `CONFIG_ARCH_CHIP_MPFS` and select `microchip/mpfs`. PX4 aborted with "Could not determine chip architecture". (missing piece) |
+| 0002 | `platforms/common/.../board_common.h` | Add `PX4_SOC_ARCH_ID_MPFS = 0x000A` to the SoC ID enum. (missing piece) |
+| 0003 | `controllib_test/CMakeLists.txt` | It never declared its dependencies on `controllib` and `mathlib`; it only linked where another module pulled them in. (upstream bug) |
+| 0004 | `systemcmds/param/param.cpp` | `param load-or-init ''` failed on boards without storage: NuttX `open("")` gives `ENXIO`, not `ENOENT`. Treat an empty backup name as none. (upstream bug) |
+| 0005 | `platforms/nuttx/CMakeLists.txt` and `NuttX/CMakeLists.txt` | PX4 never built or linked NuttX's `openamp/` because no PX4 board used RPMsg. Build it with `CONFIG_OPENAMP` and link it as a dependency of drivers and arch. (missing piece) |
+| 0006 | `platforms/nuttx/src/px4/common/tasks.cpp` | Scale task stacks by `__SIZEOF_POINTER__ >> 2`. See below. (upstream bug) |
+
+### Patches applied to PX4's NuttX fork
+
+`build-px4.sh` applies these to `sw/px4/platforms/nuttx/NuttX/nuttx`:
+
+| Patch | Why |
+|---|---|
+| `sw/patches/0002` (resource table) | Same reason as Phase 4 |
+| `sw/px4-patches/nuttx/0003`, `0004`, `0005` | The IHC fixes from Phase 4, **rebased** for the fork (only the context lines differ) |
+| **Not** `sw/patches/0001` | The fork is NuttX 12.12. Its `riscv_mtimer` adds no per-hart offset, so its `mpfs_timerisr.c` is already correct. Applying 0001 would make hart 1 program hart 0's comparator. Symptom we saw before understanding it: "ABC" then silence, hart 1 stuck in `up_idle`. |
+
+### Step 5: first boot
+
+`sim/phase5/run.sh headless` then `sim/phase5/phase5_test.py` gives 13/13: `ver all`, MSS timer calibration, `tests hrt`, `perf latency`, `top`, `work_queue`, `uorb top`, `param saved`, and `mtime` against Renode virtual time (1,000,000 per second).
+
+Findings:
+
+- Renode's MSS timer counts at **100 MHz**, not the 150 MHz APB clock. `hrt.c` measures the timer against `mtime` at init (1 ms) and logs `MSS Timer 1 at N MHz`, so the same ELF works on the board.
+- The console buffer is 32 KiB (`BOARD_CONSOLE_BUFFER_SIZE`); the 4 KiB default lost the start of boot from `dmesg`.
+- Test harness lesson: NSH prompts are not an end marker (dmesg replays them), and an interrupted run leaves commands queued in the UART. `phase5_test.py` syncs on `echo __SYNC<random> $Q` and ends each command with `echo __DONE<n> $Q`.
+
+### Step 6: RPMsg back on
+
+Board `src/rpmsg.c` does what `mpfs_bringup()` and `cwinit` did in Phase 4: `mpfs_ihc_init()`, then `rptun_boot("mpfs-ihc")` (the fork names the CPU `mpfs-ihc`, 13.1 uses `mpfsihc`). It is in **C**, because libmetal's headers need C++ `<atomic>`, absent with `-nostdinc++`.
+
+**PX4 must not depend on Linux.** `rptun_boot()` blocks until Linux sets `DRIVER_OK`, which never happens if Linux does not boot. So it runs in its own thread (`rpmsg_start`, priority 10, about 0.4% CPU while waiting). PX4 boots either way, and `[rpmsg] Linux attached` appears when Linux does.
+
+`px4-linux.resc` sets the Renode quantum to 10 us. At 100 us, HRT callouts ran up to 100 us late when Linux idled (22% of them).
+
+Results: `rpmsg_test.py 2000` gives 2000/2000; `phase5_test.py --linux` gives 15/15.
+
+### Step 7: closed loop with SIH
+
+`default.px4board` enables the simulator `sih` plus the flight modules: commander, ekf2, sensors, mc_att/pos/rate_control, control_allocator, flight_mode_manager, navigator, land_detector, load_mon, mavlink, events, dataman, manual_control, rc_update (1.5 MB of code). `init/rc.board_defaults` sets `SYS_AUTOSTART 1100` (quad X with SIH). In SIH, PX4 simulates the vehicle and sensors itself, so the real flight loop runs without hardware.
+
+#### The bug that stack sizes hid
+
+Modules hard-code stack sizes tuned for 32-bit ARM (`sih` asks for 1560 bytes). On RV64, pointers and registers are twice the size, and the stack hit 100%. It overflowed into the heap, and NuttX asserted in `mm_mallinfo.c:72` (free-list check) from the work queue thread. The symptom pointed at the memory allocator, but the cause was a stack. PX4's POSIX layer already doubles stacks on 64-bit (`PX4_STACK_ADJUSTED`); the NuttX layer did not. Patch 0006 does it in `px4_task_spawn_cmd`.
+
+#### Result
+
+EKF2 at 100 Hz (average 1.25 ms per update, attitude, local and global position valid). `commander arm` and `commander takeoff`: altitude -2.50 m held, mode Hold, no failsafe. Renode runs at about 1.0x real time. CPU is 54% busy (rate controller 16%, sih 16%, ekf2 14%).
+
+Expected noise in the log: "command not found" for modules we did not build (tone_alarm, rgbled, px4io, rc_input), `UAVCAN_ENABLE` and `GPS_1_CONFIG` not found, `param 65535 invalid`.
+
+## Files
+
+| File | Change | Reason |
+|---|---|---|
+| `sw/build-px4.sh` | New | Toolchain shim, copy port, apply patches once, rebuild on config change, build |
+| `sw/px4-chipwings/platforms/nuttx/src/px4/microchip/**` | New | Chip layer: hrt, version, board_reset, board_critmon, micro-HAL headers |
+| `sw/px4-chipwings/boards/chipwings/mpfs-hart1/default.px4board` | New | Modules in the build |
+| `.../src/{init.cpp,board_config.h,CMakeLists.txt,rpmsg.c}` | New | Board init, config, RPMsg start thread |
+| `.../nuttx-config/{nsh/defconfig,scripts/script.ld,include/*}` | New | NuttX configuration, link script, memory map |
+| `.../init/{rc.board_early,rc.board_defaults}` | New | tmpfs storage, SIH airframe, link-loss defaults |
+| `sw/px4-patches/0001` to `0006` | New | PX4 changes listed above |
+| `sw/px4-patches/nuttx/0003` to `0005` | New | IHC fixes rebased for the NuttX fork |
+| `sim/phase5/{px4.resc,px4-linux.resc,run.sh}` | New | Renode launch: PX4 alone, or with Linux |
+| `sim/phase5/phase5_test.py` | New | The Phase 5 test suite |

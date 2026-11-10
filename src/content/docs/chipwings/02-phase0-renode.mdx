@@ -1,0 +1,70 @@
+---
+title: "2. Phase 0: Renode baseline"
+description: "Running the stock PolarFire SoC demos in Renode to learn the simulator before changing anything, and the gotchas that cost us time."
+lesson:
+  module: "Chipwings module"
+  level: Intermediate
+  time: "15 min"
+---
+
+import LearningObjectives from '../../../components/LearningObjectives.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+<LearningObjectives outcomes={[
+  "Explain why we ran unmodified vendor demos before writing any code.",
+  "Start the two stock demos and find their logs.",
+  "Avoid the five Renode scripting traps listed below."
+]} />
+
+<Prerequisites
+  knowledge={["Basic shell use", "What a bootloader and a device tree are"]}
+  software={["Renode 1.17.0 portable, at ~/tools/renode_1.17.0-portable/", "Prebuilt demo images in sim/images/ (downloaded, SHA1 checked)"]}
+/>
+
+## Why
+
+Before changing anything we needed to know that **a working system boots in this simulator on this laptop**. If the stock Microchip demos had failed, every later failure would have been ambiguous: our bug, or Renode's? Phase 0 removes that doubt, and it teaches the Renode script language (`.resc`) on code we did not write.
+
+The claim for this phase: *"The stock FreeRTOS demo and the stock Linux demo both run to completion."*
+
+## How
+
+Two demos, both from Antmicro's prebuilt images:
+
+| Script | What it runs | Log |
+|---|---|---|
+| `sim/phase0/freertos-smoke.resc` | FreeRTOS + lwIP web server on the PSE, three seconds of virtual time, then quits | `sim/phase0/logs/freertos-mmuart0.log` |
+| `sim/phase0/icicle-linux.resc` | HSS on the E51, then U-Boot, then Linux 5.6 SMP on **all four** U54s, Buildroot userspace | `sim/phase0/logs/icicle-mmuart0-hss.log`, `icicle-mmuart1-linux.log` |
+
+```sh
+R=~/tools/renode_1.17.0-portable/renode
+
+# FreeRTOS smoke test, about 35 s host time
+$R --console --disable-gui sim/phase0/freertos-smoke.resc < /dev/null
+
+# Linux boot, login prompt after about 35 s; monitor on telnet port 33456
+$R --disable-gui -P 33456 sim/phase0/icicle-linux.resc
+```
+
+Note what the stock Linux demo does: it puts Linux on all four U54 cores. Our design needs hart 1 for NuttX, so from Phase 1 on we build our own images.
+
+### Five traps we hit
+
+| Trap | What happens | What we do |
+|---|---|---|
+| Paths in `.resc` | `@$ORIGIN/...` is not expanded; plain relative paths resolve against Renode's own directory | Use `$ORIGIN/...` without `@` |
+| `include` of stock scripts | Renode downloads every `$var?=@https://...` URL in them, even when you set the variable first | Inline the stock setup in our scripts instead |
+| Log level | The PolarFire model prints a WARNING for almost every register access: 7.6 GB of log in 3 s, and a 5x slowdown | `logLevel 3` |
+| Headless runs | `--console` with stdin at end-of-file makes Renode quit when the script ends | Use `-P <port>` for long sessions; errors show only on the console or telnet monitor |
+| Downloads | TLS resets from GitHub and antmicro | `curl --retry 5 --retry-all-errors` |
+
+## Files
+
+| File | Why |
+|---|---|
+| `sim/phase0/freertos-smoke.resc` | Stock FreeRTOS demo, with the setup inlined and the log level lowered |
+| `sim/phase0/icicle-linux.resc` | Stock HSS, U-Boot and Linux demo |
+| `sim/images/*` | Prebuilt binaries (`icicle-hss.elf`, `icicle-u-boot`, `icicle-vmlinux`, `icicle-fitImage.fit`, and others). Not ours; only used here |
+| `sim/README.md` | Running notes for every phase, with the measurements quoted in these lessons |
+
+We changed nothing in the vendor code in this phase.

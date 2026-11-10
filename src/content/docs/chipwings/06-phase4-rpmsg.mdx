@@ -1,0 +1,143 @@
+---
+title: "6. Phase 4: RPMsg over the Mi-V IHC"
+description: "Making NuttX and Linux talk: the Mi-V IHC mailbox, the Renode model we wrote, the OpenSBI extension, the NuttX driver patches, and the simulator races we fixed."
+lesson:
+  module: "Chipwings module"
+  level: Advanced
+  time: "45 min"
+---
+
+import LearningObjectives from '../../../components/LearningObjectives.astro';
+import Flow from '../../../components/diagrams/Flow.astro';
+
+<LearningObjectives outcomes={[
+  "Describe the RPMsg stack: rpmsg, virtio, vrings, resource table, IHC doorbell.",
+  "Name the six pieces we added or changed and what each does.",
+  "Explain the three IHC driver bugs (patches 0003, 0004, 0005) in plain terms.",
+  "Explain why two Renode peripherals were rewritten, and what bug they hid."
+]} />
+
+## Why
+
+Phase 4 claims: *Linux and NuttX can exchange messages reliably, with no shared locks and no shared OS.* This is the link that will carry MAVLink in Phase 5.
+
+The mechanism, in layers:
+
+<Flow
+  caption="One RPMsg message from Linux to NuttX, top to bottom. The reply takes the other vring."
+  steps={[
+    { "label": "Application", "detail": "Linux writes /dev/rpmsg0" },
+    { "label": "rpmsg", "detail": "virtio_rpmsg_bus (Linux) and OpenAMP (NuttX)" },
+    { "label": "virtqueue", "detail": "Message goes into vring0 in shared DDR" },
+    { "label": "Doorbell", "detail": "Linux kicks the Mi-V IHC through an SBI call" },
+    { "label": "NuttX", "detail": "IHC interrupt on hart 1 reads the vring and delivers the message" }
+  ]}
+/>
+
+Roles: **Linux is the remoteproc master** (virtio driver) and **NuttX is the remote** (virtio device, via `rptun`). The **resource table** at a fixed address describes the rings; Linux reads it to attach to an already-running NuttX.
+
+## How
+
+```sh
+sw/build-nuttx.sh nsh-rpmsg-hart1       # NuttX with IHC client, rptun, RPMsg ping
+sw/build-linux.sh                       # OpenSBI with IHC extension, kernel, DTB with IHC nodes
+sim/phase4/run.sh headless
+sim/phase4/rpmsg_test.py 500            # 500 checked round trips over /dev/rpmsg0
+```
+
+### The six pieces
+
+| Piece | Where | Role |
+|---|---|---|
+| IHC model | `sim/peripherals/MiV_IHC.cs` | Renode has no Mi-V IHC. We wrote IHC v1: per hart-pair control and message registers, per-hart interrupt-enable and message-available registers, level interrupts to PLIC 180 (hart 1), 179 (hart 2), 178, 177. |
+| OpenSBI extension | `sw/br2-chipwings/patches/opensbi/0001-...patch` | Microchip's vendor SBI extension `0x09000029` (IHC init, tx, rx, remote-processor state), which HSS provides on the real board. Generic OpenSBI does not have it. |
+| Linux device tree | `chipwings-mpfs-linux.dts` | `microchip,miv-ihc` mailbox (IRQ 179) and `microchip,miv-remoteproc` with its memory regions |
+| NuttX config | `sw/configs/nsh-rpmsg-hart1` | `MPFS_IHC_CLIENT`, `RPTUN`, `RPMSG_PING`, `DEV_SIMPLE_ADDRENV`, own linker script placing `.resource_table` at `0xA2300000` |
+| `cwinit` | `sw/chipwings-apps/cwinit` | Init entry point that starts rptun, then NSH |
+| NuttX patches | `sw/patches/0002` to `0005` | Resource table placement and three IHC driver fixes |
+
+Boot order: NuttX boots in microseconds and `cwinit` starts rptun, filling in the resource table. Linux boots, `miv_remoteproc` asks OpenSBI for the remote state (running), attaches through the table, and `virtio_rpmsg_bus` appears. NuttX announces `rpmsg-ping` at address `0x401`. Check in Linux:
+
+```sh
+ls /sys/bus/rpmsg/devices        # virtio0.rpmsg-ping.-1.1025
+```
+
+## Problems found and why each file changed
+
+### Missing: no IHC in Renode, and Linux needs the SBI extension
+
+The Linux mailbox driver (`mailbox-miv-ihc.c`) only talks to the IHC through SBI calls. Generic OpenSBI's vendor slot is `0x09000000 + mvendorid` (SiFive's is `0x489`), not Microchip's `0x029`, so our extension registers its own from `final_init`. NuttX has its own SBI handler (`mpfs_ihc_sbi.c`), but it does not match the current Linux driver (argument order and message size differ), so we ported HSS's handler instead.
+
+Register semantics for the Renode model came from Microchip's HSS v1 driver: the sender sets RMP, the receiver reads it as MP, writing MP=0 consumes the message, writing ACK=1 sends an ack, writing ACK_CLR=0 clears an incoming ack. ACK_CLR reads as 1 so read-modify-write cannot clear acks by accident.
+
+### Patch 0002: resource table at an unknown address (missing piece)
+
+NuttX kept the table inside `g_shmem`, in `.bss`, at whatever address the linker chose. Linux must read it from a fixed address. The patch puts the table **first** in the struct and the struct in its own section `.resource_table`; the linker script pins it to `0xA2300000`, and the Linux device tree's `rsc-table` points there.
+
+Also: Linux attached to an all-zero table at first, because rptun does not autostart. `cwinit` starts it before NSH.
+
+### Patch 0003: RPMsg stalled after 107 round trips (upstream bug)
+
+The reply was in the vring but Linux never got the kick. Two causes in `mpfs_ihc.c`:
+
+1. On every incoming ack the ISR also "received" the stale previous message and acked it, because the "message present" test ignored whether the MP bit was actually set. Fix: only treat a message as present when its bit is set.
+2. `mpfs_rptun_notify()` gave up after 5 immediate retries when a Linux message was pending, and a lost kick leaves the remote waiting forever. Fix: retry with a delay and log if the kick is ever lost.
+
+### Patch 0004: the IHC lost-notification race (upstream bug, found in step 6 of Phase 5)
+
+MP mirrors the remote's RMP, and **writing 0 to MP consumes the remote's message**. NuttX (and our OpenSBI extension) did read-modify-write on the control register. If a message arrived between the read and the write, the write put back a stale MP=0 and consumed a message nobody had read. Renode's coarse scheduling (a 100 us quantum) hid this: at 10 us, 2 of 3 runs of 500 pings stalled. We found it by logging `logLevel 0 ihc`: "hart 2 consumed message from hart 1" with no ack after it.
+
+Fix: every write that does not mean to consume sets MP to 1 (`MP_KEEP`). Writing 1 is harmless either way. After the fix, 2000/2000 at 10 us. The real IP's MP semantics are not confirmed by a datasheet (none found); check on the board at H0.
+
+### Patch 0005: notify retry budget (hardening)
+
+Added in Phase 5 (lesson 8). Listed here because it is the third of the same file.
+
+### Simulator fix: Linux RCU stall under load (Renode bug)
+
+Under fork-heavy load Linux stalled: a hart sat in OpenSBI's remote TLB flush forever, because the hart it waited for never took its IPI. The CLINT `msip[2]` register read 1 but hart 2's `mip.MSIP` was 0. Two races, both from Renode running one host thread per hart:
+
+1. `CoreLevelInterruptor` stores `msip` and then sets the interrupt line with nothing around the pair.
+2. The real culprit: `BaseRiscV.OnGPIO` modifies `mip` on the **raising** thread. Hart 3 setting hart 2's MSIP races with hart 2 writing its own `mip`, and one update is lost. `GPIO.Set` skips repeated values, so the line never re-asserts.
+
+Fix, in our own platform file (stock `polarfire-soc.repl` plus these):
+
+- `sim/peripherals/SafeIrqRiscV64.cs`: a RISC-V CPU whose `OnGPIO` applies a change requested from another thread only at a synced state, when no CPU runs. Own-thread changes stay immediate.
+- `sim/peripherals/SafeIpiCoreLevelInterruptor.cs`: a CLINT whose msip write re-sets the line from the stored value until stable.
+
+A first workaround (`machine SetSerialExecution true`) took boot from 24 s to 41 s. With the fix, scripts run in parallel and boot to login in about 12 s.
+
+### Other small items
+
+- The kernel selects `vdev0buffer` only as `memory-region` index 0.
+- OpenAMP and libmetal are downloaded by the NuttX build. We pre-downloaded, patched them once, and ran `git init` in `sw/nuttx/openamp/{open-amp,libmetal}` so `make distclean` keeps them.
+- Phase 2 and 3 scripts now boot the same Linux image, which has the remoteproc node. With the Phase 3 NuttX (no rptun), Linux attaches to a zero table and simply has no RPMsg channel.
+
+## The test programs
+
+`examples/` holds eight programs, each ending in `<name>: PASS` or `FAIL`. `examples/run_examples.py` runs them all (6/6 pass).
+
+| Program | Runs on | Checks |
+|---|---|---|
+| `cw_timer` | NuttX | Periodic wake-ups: not early, at most 2 ticks late, no drift (uses the patch 0001 timer) |
+| `cw_threads` | NuttX | Two producers and two consumers over a message queue with a mutex and semaphore |
+| `cw_rpmsg_echo`, `cw_rpmsg_imu` | NuttX | RPMsg endpoints `cw-echo` and `cw-imu` (simulated IMU stream) |
+| `hartcheck` | Linux | Uses exactly harts 2-4 |
+| `rpmsg_ping`, `rpmsg_echo`, `rpmsg_imu` | Linux | Round trips, every size from 1 to 496 bytes, ordered IMU stream at the requested rate |
+
+## Files
+
+| File | Change | Reason |
+|---|---|---|
+| `sim/peripherals/MiV_IHC.cs` | New | IHC v1 model (simulator) |
+| `sim/peripherals/SafeIrqRiscV64.cs`, `SafeIpiCoreLevelInterruptor.cs` | New | Fix lost interrupts (simulator) |
+| `sim/platforms/chipwings-mpfs.repl` | New | Stock platform with these three peripherals |
+| `sim/phase4/rpmsg.resc`, `run.sh`, `rpmsg_test.py` | New | Launch and 500/2000-round-trip test |
+| `sw/br2-chipwings/patches/opensbi/0001-...patch` | New | Microchip IHC SBI extension (missing piece) |
+| `sw/patches/0002-...patch` | New | Fixed-address resource table |
+| `sw/patches/0003-...patch` | New | Spurious ack and lost notification (upstream bug) |
+| `sw/patches/0004-...patch` | New | Do not consume messages in control register updates (upstream bug) |
+| `sw/configs/nsh-rpmsg-hart1/{defconfig,ld.script}` | New | NuttX with IHC and rptun |
+| `sw/chipwings-apps/cwinit` | New | Start rptun before NSH |
+| `examples/` (all) | New | Test programs and `run_examples.py` |
+| `sw/br2-chipwings/package/chipwings-examples` | New | Buildroot package that builds `examples/linux` |

@@ -1,0 +1,113 @@
+---
+title: "4. Phase 2: Linux on harts 2-4"
+description: "Building our own Buildroot Linux for three U54 cores, the CLINT slot-mapping bug in OpenSBI's view of the device tree, and the Renode-only device tree changes."
+lesson:
+  module: "Chipwings module"
+  level: Advanced
+  time: "30 min"
+---
+
+import LearningObjectives from '../../../components/LearningObjectives.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+<LearningObjectives outcomes={[
+  "Explain what the Buildroot external tree contains and why we use one.",
+  "Describe the OpenSBI boot layout used in Renode, with and without HSS.",
+  "Explain the CLINT slot-mapping bug, its symptom, and the device tree fix.",
+  "Tell which device tree changes are for hardware and which only for Renode."
+]} />
+
+<Prerequisites
+  knowledge={["Buildroot basics (see module 2 of the Embedded Linux course)", "Device trees (module 1)"]}
+  software={["Buildroot 2026.02.3 in sw/buildroot", "Microchip linux4microchip+fpga-2025.10 kernel (6.12.48)"]}
+/>
+
+## Why
+
+Phase 2 claims: *Linux runs SMP on harts 2, 3 and 4, and never touches hart 1.* The stock demo in Phase 0 used all four U54s, so we needed our own image with a device tree that describes only three CPUs and keeps hart 1's memory and timer out of reach.
+
+## How
+
+### The Buildroot external tree
+
+Instead of editing Buildroot, everything of ours lives in `sw/br2-chipwings/` and is passed with `BR2_EXTERNAL`. Buildroot itself stays unmodified.
+
+```sh
+sw/build-linux.sh                       # first build about 5 min with 24 cores
+sw/build-linux.sh linux-rebuild all     # after a device tree or kernel config change
+```
+
+`chipwings_mpfs_linux_defconfig` is Buildroot's `microchip_mpfs_icicle_defconfig` with these differences:
+
+| Setting | Why |
+|---|---|
+| Bootlin glibc toolchain (prebuilt) | No need to build GCC |
+| Same `linux4microchip` kernel, `mpfs` defconfig | Same driver set as the Icicle Kit, including the IHC and remoteproc drivers needed in Phase 4 |
+| Custom DTS directory | RISC-V only builds DTBs from vendor subdirectories, so ours is in `dts/microchip/` |
+| Root filesystem as **initramfs** inside the kernel | Renode then needs no SD card, HSS or U-Boot |
+| Console on `ttyS3` (MMUART3) | MMUART1 belongs to NuttX |
+| OpenSBI generic with `FW_TEXT_START=0x80000000`, `FW_JUMP_FDT_ADDR=0x8a000000` | Boot layout below |
+| `BR2_PACKAGE_CHIPWINGS_EXAMPLES`, `BR2_PACKAGE_STRESS_NG` | Test programs (added in Phases 4 and 5) |
+
+`board/mpfs-linux/linux.fragment` adds kernel options on top of Microchip's: initramfs support, and in later phases `MAGIC_SYSRQ` (to crash Linux on purpose) and `RPMSG_TTY`.
+
+### Boot layout in Renode
+
+No HSS, no U-Boot: Renode puts the pieces where OpenSBI and the kernel expect them.
+
+| Address | Content |
+|---|---|
+| `0x80000000` | OpenSBI `fw_jump.elf`, started on harts 2-4 with `a1` = DTB |
+| `0x80200000` | Kernel `Image` |
+| `0x8A000000` | Device tree |
+
+Run it with `sim/phase2/run.sh headless` (console on telnet 33458, user `root`, password `root`). Login appears after about 5 s.
+
+Checks: `nproc` is 3; `/proc/cpuinfo` lists harts 2, 3, 4; `/proc/iomem` shows `a2000000-a403ffff : Reserved`.
+
+## Problems found and fixed
+
+### 1. CLINT slot mapping (upstream, affects hardware)
+
+**Symptom.** The kernel stopped at "Bringing up secondary CPUs" with an interrupt storm.
+
+**Cause.** `mpfs.dtsi` lists the E51's CLINT interrupts as `0xffffffff` (it has none that Linux uses). Generic OpenSBI derives the CLINT's "first hart" from the harts that have M-mode interrupts listed, so it took slot 0 to be **hart 1**. Every hart therefore used the *next* hart's registers: hart 2 armed **hart 1's `mtimecmp`** (NuttX's timer!) and never cleared its own software interrupt.
+
+**Fix.** In our device tree, `&clint` lists the E51's real interrupt entries so the slots line up:
+
+```dts
+&clint {
+    interrupts-extended = <&cpu0_intc 3>, <&cpu0_intc 7>,   /* E51: slot 0 = hart 0 */
+                          <&cpu1_intc 3>, <&cpu1_intc 7>,
+                          <&cpu2_intc 3>, <&cpu2_intc 7>,
+                          <&cpu3_intc 3>, <&cpu3_intc 7>,
+                          <&cpu4_intc 3>, <&cpu4_intc 7>;
+};
+```
+
+Interrupt 3 is the software interrupt (IPI) and 7 the timer. With the E51 entries present, slot N is hart N.
+
+This is the mirror image of the Phase 1 bug, and it is the reason Phase 3 (both together) is a meaningful test.
+
+### 2. OpenSBI linked at address 0
+
+OpenSBI 1.7's generic platform is position independent and links at 0x0, then jumped to 0x200000. We pass `FW_TEXT_START=0x80000000`. A plain rebuild does not relink; run `opensbi-dirclean` first.
+
+### 3. Renode has no clock controller (Renode-only)
+
+The `clkcfg` driver reads an MSS PLL that Renode does not model, computed zero rates and put MMUART3 into reset (`0x20002088`), hanging the console. In the Renode device tree we **disable `clkcfg`** and give MMUART3 a fixed 150 MHz clock. On the Icicle Kit, HSS sets clocks and resets, so this part of the device tree must be reverted for hardware. The `syscontroller` node is disabled too (it needs a mailbox Renode lacks).
+
+### 4. Harmless message
+
+`riscv-plic: Invalid cpuid for context 2` refers to the PLIC context of hart 1, which Linux does not use.
+
+## Files
+
+| File | Change | Reason |
+|---|---|---|
+| `sw/br2-chipwings/configs/chipwings_mpfs_linux_defconfig` | New | Our Linux build |
+| `sw/br2-chipwings/board/mpfs-linux/linux.fragment` | New | Extra kernel options |
+| `sw/br2-chipwings/board/mpfs-linux/dts/microchip/chipwings-mpfs-linux.dts` | New | Harts 2-4, `&clint` fix, reserved memory, Renode-only clock fixes (and in Phase 4 the IHC nodes) |
+| `sw/br2-chipwings/{Config.in,external.desc,external.mk}` | New | Buildroot external tree boilerplate |
+| `sw/build-linux.sh` | New | Wrapper around the Buildroot `make` with `O=sw/br2-out` |
+| `sim/phase2/linux-harts234.resc`, `run.sh` | New | Renode launch for Linux alone |

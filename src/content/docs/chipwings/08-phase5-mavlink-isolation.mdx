@@ -1,0 +1,134 @@
+---
+title: "8. Phase 5: MAVLink and isolation"
+description: "Carrying MAVLink between PX4 and Linux over RPMsg, the link-loss landing, the isolation tests, and the single test suite for the phase."
+lesson:
+  module: "Chipwings module"
+  level: Advanced
+  time: "40 min"
+---
+
+import LearningObjectives from '../../../components/LearningObjectives.astro';
+
+<LearningObjectives outcomes={[
+  "Describe how /dev/ttyRPMSG0 is built on NuttX and bound on Linux.",
+  "Explain the speak-first rule and the 3-second liveness gate.",
+  "Explain patch 0005 and what a dead Linux costs the flight side.",
+  "Run the 30-check suite and say what each group proves."
+]} />
+
+## Why
+
+The point of the whole design is a flight controller that **does not depend on the mission computer**, and a mission computer that can still command it. Two claims:
+
+1. **Linux can talk to PX4 over MAVLink**, including arming and takeoff.
+2. **Linux cannot hurt PX4**: not by load, not by crashing, not by being silent.
+
+## How: MAVLink over RPMsg
+
+### PX4 side: `rpmsg_tty.c`
+
+PX4's `mavlink` module wants a serial device. We register `/dev/ttyRPMSG0` as a NuttX `uart_dev_t` on an RPMsg endpoint named `rpmsg-tty`, carrying **raw bytes**.
+
+Why not NuttX's own `uart_rpmsg.c`? It wraps every message in a header (command, result, cookie, count) that only another NuttX understands. Linux's `rpmsg_tty` would pass that header to the application as data. Ours is `uart_rpmsg.c` without the header and without the write-response handshake.
+
+`init/rc.board_mavlink` starts it:
+
+```sh
+mavlink start -d /dev/ttyRPMSG0 -b 921600 -r 100000 -m onboard
+mavlink stream -d /dev/ttyRPMSG0 -s ATTITUDE -r 25
+mavlink stream -d /dev/ttyRPMSG0 -s LOCAL_POSITION_NED -r 10
+```
+
+`-r` is a byte budget: at 20000 B/s the default onboard streams throttled ATTITUDE to 10 Hz, so we gave it 100000.
+
+Odd-looking config: `CONFIG_RPMSG_UART=y` is set **only** because it selects the serial TX/RX DMA support that our driver uses. It also makes `drivers_initialize()` call `rpmsg_serialinit()`, which `rpmsg_tty.c` defines as an empty stub (the tty is registered from `board_rpmsg_initialize()` once the IHC is up). It works, but it is a workaround (issue 17).
+
+### Linux side: `mavlink_link.c`
+
+Linux binds `rpmsg_tty` by the exact endpoint name `rpmsg-tty` (kernel option `CONFIG_RPMSG_TTY=y`, built in) and creates `/dev/ttyRPMSG0`. `examples/linux/mavlink_link.c` implements MAVLink 2 framing by hand, with a CRC table (`mavlink_crcs.h`) generated from PX4's `common.h`. It sends a 1 Hz HEARTBEAT, counts HEARTBEAT, ATTITUDE and LOCAL_POSITION_NED, counts CRC errors and sequence gaps, and can run `takeoff` (arm and takeoff commands, checks acks and altitude).
+
+Result over 60 s: 60 heartbeats, 1500 ATTITUDE (25 Hz), 600 position, about 30,000 frames, **0 CRC errors, 0 sequence gaps**. Linux commands arm and takeoff (both acked), z = -2.50 m.
+
+### Rule 1: Linux must speak first, and keep speaking
+
+OpenAMP learns Linux's endpoint address only from the first message Linux sends (the name-service announcement carries only NuttX's). So PX4 cannot send until Linux has written once. And whenever Linux has been silent for 3 s, the tty **discards** outgoing bytes. Reasons: stale telemetry is useless, queued output gave Linux a burst plus a gap on attach, and sending to a dead peer is expensive (next section). Any other client of `rpmsg-tty` must therefore also speak first and keep talking. The heartbeat does both.
+
+### Rule 2: a dead Linux must be cheap
+
+A dead Linux never acknowledges the IHC, so every `mpfs_rptun_notify()` used its whole retry budget. Patch `0005-mpfs-ihc-bound-the-notify-retry-budget.patch` (in `sw/patches/` and `sw/px4-patches/nuttx/`):
+
+| | Before | After |
+|---|---|---|
+| `mpfs_ihc_tx_message` | Spun up to 10,000 times on the control register, inside each of 1000 retries (about a second per failed notification on the board, although the comment said 10 ms) | Reads once per attempt |
+| `mpfs_rptun_notify` | 1000 retries | 100 attempts, 10 us apart (about 1 ms) |
+| Effect of a Linux crash | The MAVLink thread (NSH's priority) starved the NSH task for the first seconds | Shell answers in 34 s wall clock instead of 117 s (both at 0.03x speed) |
+
+Flight tasks run at higher priority and were never affected. With Linux frozen, 255 notifications fail in the 3 s before the liveness gate closes. No lost kicks with the shorter budget: 2000/2000 round trips, examples 6/6, stress-ng with live MAVLink 9/9.
+
+Caveat (issue 10): a Linux that is alive but slower than 1 ms to acknowledge would now lose a kick. Real timing on the board is not measured.
+
+### Link loss: PX4 lands by itself
+
+`rc.board_defaults` sets `NAV_DLL_ACT 3` (land) and `COM_DL_LOSS_T 5`. With Linux frozen (`sysbus.u54_N IsHalted true` for harts 2-4), PX4 flags the link lost after about 10 s of simulated time, lands, and disarms by itself, 25 s after the freeze.
+
+**Consequence:** PX4 now refuses to arm without a data link (issue 8). Step H3 on the board ("PX4 alone") must set `NAV_DLL_ACT 0` or provide a MAVLink peer.
+
+## The isolation tests
+
+`sim/phase5/isolation_test.py` (Renode only, 9/9 in its latest form) and the `--flight` part of `phase5_test.py`:
+
+| Check | Result |
+|---|---|
+| Hover under load | z = -2.5 m (within 0.01 m) while `stress-ng --cpu 3 --vm 2` runs on the Linux harts (loadavg 2.2) |
+| Failsafe | None triggered |
+| HRT callouts | None over 100 us beyond baseline (3 versus 0 in the 100 us bucket, none above) |
+| Linux kernel panic (`echo c > /proc/sysrq-trigger`) | PX4 keeps hovering, armed, mode Hold, shell responsive |
+| Linux frozen | PX4 declares link lost within 15 s, lands, disarms |
+
+What this does **not** show: real L2 and DDR contention. Renode is not cycle accurate, so these results prove the software does not depend on Linux, not the real latency. Repeat on the board at H4.
+
+A panicked Linux makes Renode run at about 0.03x real time (the spinning harts), so timing tests use **frozen harts** instead.
+
+## The single test suite
+
+```sh
+sim/phase5/run.sh headless linux
+# wait for the Linux login prompt, then:
+sim/phase5/phase5_test.py --linux --flight        # 30/30, about 15 minutes
+```
+
+| Flags | What runs |
+|---|---|
+| none (with `run.sh headless`) | Step 5 suite: PX4 alone |
+| `--linux` | Step 6 suite: adds `hartcheck`, `rpmsg_ping`, and all step 5 checks with Linux running (15/15) |
+| `--flight` | Step 8-9 suite: `/dev/ttyRPMSG0` exists, 60 s of MAVLink, arm and takeoff from Linux, EKF2 healthy, hover at 2.5 m, stress-ng, Linux frozen then PX4 lands |
+| `--target board --serial ... --linux-serial ...` | The same checks on the Icicle Kit (the freeze becomes a sysrq panic) |
+
+Run it **once per boot**, on a fresh boot: the dmesg check needs the boot lines, and the flight ends with the vehicle disarmed on the ground and Linux gone. Measured: Renode runs the flight at 0.6-0.8x real time; PX4 is about 80% busy while hovering with MAVLink streaming.
+
+### A test-harness bug worth remembering
+
+Renode's telnet monitor answers **one connection at a time**; a second connection is accepted and its commands silently ignored. The suite's first version left a monitor socket open, and the "freeze Linux" command did nothing: PX4 kept receiving heartbeats and never declared the link lost. The failing check's diagnostics block showed `GCS heartbeat valid`. Now every `Monitor` is closed, and the suite reads `IsHalted` back and fails with "Linux is really gone" if the freeze did not take.
+
+### Other test fixes
+
+- The `sleep` bound is 110 ms instead of 100 ms (the flight stack preempts the NSH task).
+- The param check uses `COM_DISARM_PRFLT`, because `SYS_AUTOSTART` is now 1100 by default.
+- `perf latency` (99% of callouts within 25 us) is **marginal** with the flight stack running: 98.6-99.3% across runs, so it fails about half the time (issue 1). The threshold was left unchanged on purpose.
+
+## Files
+
+| File | Change | Reason |
+|---|---|---|
+| `sw/px4-chipwings/boards/chipwings/mpfs-hart1/src/rpmsg_tty.c` | New | `/dev/ttyRPMSG0` on an RPMsg endpoint, raw bytes, liveness gate |
+| `.../src/rpmsg.c`, `board_config.h`, `CMakeLists.txt` | Edited | Register the tty after the IHC is up |
+| `.../init/rc.board_mavlink` | New | Start MAVLink and streams |
+| `.../init/rc.board_defaults` | Edited | Link-loss land (`NAV_DLL_ACT 3`, `COM_DL_LOSS_T 5`) |
+| `.../nuttx-config/nsh/defconfig` | Edited | `CONFIG_RPMSG_UART=y` (side effect, see above) |
+| `sw/patches/0005`, `sw/px4-patches/nuttx/0005` | New | Bound the notify retry budget |
+| `examples/linux/mavlink_link.c`, `mavlink_crcs.h`, `Makefile` | New / edited | Linux MAVLink peer |
+| `sw/br2-chipwings/board/mpfs-linux/linux.fragment` | Edited | `CONFIG_RPMSG_TTY=y`, `MAGIC_SYSRQ` |
+| `sw/br2-chipwings/configs/chipwings_mpfs_linux_defconfig` | Edited | `BR2_PACKAGE_STRESS_NG=y` |
+| `sw/build-px4.sh` | Edited | Rebuild all NuttX objects on defconfig change |
+| `sim/phase5/isolation_test.py` | New | Load and Linux-crash checks (Renode only) |
+| `sim/phase5/phase5_test.py` | Extended | `--linux`, `--flight`, `--target` |

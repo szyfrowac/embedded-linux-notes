@@ -130,13 +130,6 @@ export const modules = [
       { slug: 'capstone-reproducible-bsp-release', label: 'Produce a reproducible BSP release' },
     ],
   },
-  {
-    id: 'cw',
-    title: 'Case study: Chipwings UAV SoC',
-    summary: 'Flight control on NuttX and mission software on Linux, sharing one PolarFire SoC, simulated in Renode.',
-    level: 'Advanced',
-    lessons: [{ slug: 'polarfire-soc-chipwings-amp-guide', label: 'PolarFire SoC and AMP partitioning' }],
-  },
 ];
 
 export const reference = [
@@ -147,14 +140,39 @@ export const reference = [
   { slug: 'troubleshooting-faq', label: 'Troubleshooting FAQ' },
 ];
 
+/**
+ * The Chipwings module is its own menu: the sidebar override (src/components/overrides/Sidebar.astro)
+ * shows only these lessons under /chipwings/ and only the embedded Linux course elsewhere.
+ * Lesson slugs live in src/content/docs/chipwings/.
+ */
+export const chipwings = {
+  title: 'Chipwings module',
+  summary: 'One PolarFire SoC, two operating systems: a PX4 flight controller on NuttX and Linux for the mission computer, built and tested phase by phase in Renode.',
+  lessons: [
+    { slug: 'chipwings/00-overview', label: 'Overview: why, how, what we changed' },
+    { slug: 'chipwings/01-architecture', label: '1. Architecture and memory map' },
+    { slug: 'chipwings/02-phase0-renode', label: '2. Phase 0: Renode baseline' },
+    { slug: 'chipwings/03-phase1-nuttx', label: '3. Phase 1: NuttX on hart 1' },
+    { slug: 'chipwings/04-phase2-linux', label: '4. Phase 2: Linux on harts 2-4' },
+    { slug: 'chipwings/05-phase3-amp', label: '5. Phase 3: both together (AMP)' },
+    { slug: 'chipwings/06-phase4-rpmsg', label: '6. Phase 4: RPMsg over the Mi-V IHC' },
+    { slug: 'chipwings/07-phase5-px4-port', label: '7. Phase 5: porting PX4 to hart 1' },
+    { slug: 'chipwings/08-phase5-mavlink-isolation', label: '8. Phase 5: MAVLink and isolation' },
+    { slug: 'chipwings/09-change-catalogue', label: '9. Every file we changed' },
+    { slug: 'chipwings/10-testing-and-next-steps', label: '10. Tests, open issues, hardware' },
+  ],
+};
+
 /** Sidebar entries in Starlight's format. */
 export function sidebar() {
   return [
     ...modules.map((m, i) => ({
-      label: m.id === 'cw' ? m.title : `${i + 1}. ${m.title}`,
+      label: `${i + 1}. ${m.title}`,
       collapsed: true,
       items: m.lessons.map((l) => ({ label: l.label, slug: l.slug })),
     })),
     { label: 'Reference', collapsed: true, items: reference.map((l) => ({ label: l.label, slug: l.slug })) },
+    // Shown only under /chipwings/ (see the Sidebar override); hidden from the embedded Linux menu.
+    { label: chipwings.title, items: chipwings.lessons.map((l) => ({ label: l.label, slug: l.slug })) },
   ];
 }

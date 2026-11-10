@@ -1,0 +1,105 @@
+---
+title: "3. Phase 1: NuttX on hart 1"
+description: "Building Apache NuttX for one U54 hart, proving it runs on that hart only, and the timer bug that made it hang."
+lesson:
+  module: "Chipwings module"
+  level: Advanced
+  time: "25 min"
+---
+
+import LearningObjectives from '../../../components/LearningObjectives.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+<LearningObjectives outcomes={[
+  "Build NuttX 13.1 for the Icicle board with our build script and a named configuration.",
+  "Prove with two independent checks that NuttX runs on hart 1 and nowhere else.",
+  "Explain the double hart-offset bug in mpfs_timerisr.c and how Renode exposed it.",
+  "Describe how patches are applied once and tracked."
+]} />
+
+<Prerequisites
+  software={["xPack riscv-none-elf-gcc 15.2.0-1 in ~/tools/", "sw/nuttx and sw/apps at tag nuttx-13.1.0", "Renode from lesson 2"]}
+/>
+
+## Why
+
+The flight side must work **alone** before it shares a chip with anything. Phase 1 claims:
+
+1. NuttX boots and its test suite (`ostest`) passes.
+2. It runs on **hart 1 only**; every other core stays idle.
+
+## How
+
+### Build
+
+```sh
+sw/build-nuttx.sh                 # default config nsh-hart1, about 10 s, links at 0x80000000
+```
+
+`build-nuttx.sh` does five things:
+
+1. Applies every `sw/patches/*.patch` to `sw/nuttx` once (a stamp file in `sw/out/patch-stamps/` records what was applied, because a later patch can change an earlier patch's context so neither `--check` nor `--check --reverse` works on it alone).
+2. Links `sw/chipwings-apps` into the NuttX apps tree as `apps/chipwings`, and `examples/nuttx` as `apps/cwexamples`.
+3. Configures the in-tree board `icicle:nsh`, then replaces `.config` with `sw/configs/<config>/defconfig`.
+4. If the config folder has an `ld.script`, passes it as `ARCHSCRIPT=` (this overrides the board's choice).
+5. Builds, and copies `nuttx`, `nuttx.bin` and `System.map` to `sw/out/<config>/`.
+
+Keeping our changes outside the NuttX tree (patches, configs, apps) means the upstream clone stays clean and can be updated.
+
+### Run
+
+```sh
+sim/phase1/run.sh headless        # NSH on telnet localhost 33457, monitor on 33456
+sim/phase1/check-one-core.sh      # per-core state from Renode
+```
+
+`sim/phase1/nuttx-hart1.resc` halts the E51 and U54 harts 2-4, loads the ELF onto `u54_1`, and attaches a terminal to MMUART1.
+
+### Proving "one core only"
+
+Two checks, because each can fool you alone:
+
+- In NSH, our `hartinfo` command prints `Physical hart (mhartid) : 1 ... U54_1` and `NuttX SMP : disabled`. Do **not** use `/proc/cpuinfo` here: NuttX numbers harts from 0 and prints `hart : 0` even on hart 1.
+- `check-one-core.sh` asks Renode for per-core instruction counts. Only `u54_1` executes; the E51 and harts 2-4 sit at PC `0x1000` with zero instructions.
+
+Result: `ostest` passes, all 30 groups, exit status 0, in about 4 minutes of host time.
+
+## The bug: a double hart offset
+
+On the first run NuttX booted but the first `usleep()` hung forever. `g_system_ticks` stayed at 0: the system tick never fired.
+
+**Cause.** In NuttX 13.1.0, `up_timer_initialize()` computed the comparator address for this hart itself and passed it to `riscv_mtimer_initialize()`. That function adds `8 * up_cpu_index()` **again**. On hart 1 the result was `0x02004010`, which is **hart 2's** `mtimecmp`. NuttX never got its own tick. On the board it would also have fired timer interrupts at the Linux hart.
+
+**Fix** (`sw/patches/0001-mpfs-timerisr-fix-double-hart-offset-for-mtimecmp.patch`): pass the base address and let the callee add the offset.
+
+```c
+-  uintptr_t hart_id = up_cpu_index();
+   struct oneshot_lowerhalf_s *lower = riscv_mtimer_initialize(
+-    MPFS_CLINT_MTIME, MPFS_CLINT_MTIMECMP0 + hart_id * sizeof(uintptr_t),
++    MPFS_CLINT_MTIME, MPFS_CLINT_MTIMECMP0,
+     RISCV_IRQ_TIMER, MTIMER_FREQ);
+```
+
+Category: **upstream bug**, affects hardware. Upstream master still has the double offset.
+
+Important detail for Phase 5: PX4 uses its own NuttX fork (12.12), whose `riscv_mtimer` adds **no** offset. There the original code was already correct, and applying patch 0001 would make hart 1 program hart 0's comparator. So 0001 is applied to the NuttX 13.1 tree only.
+
+### Other things we learned
+
+- `LoadELF` signature in Renode 1.17: `sysbus LoadELF <file> <useVirtualAddress> <cpu>`; it also sets that CPU's PC.
+- With a telnet monitor, script errors are visible only on the monitor.
+- GDB: `machine StartGdbServer 3333 false u54_1`. GDB's CSR numbering is wrong for this core; read CSRs in the monitor with `u54_1 GetRegisterUnsafe <65 + csr>`.
+- 187 `plic: Trying to complete irq` errors at boot are NuttX clearing claims; harmless.
+
+## Files
+
+| File | Change | Reason |
+|---|---|---|
+| `sw/patches/0001-mpfs-timerisr-...patch` | New | Fix the double `mtimecmp` offset (upstream bug) |
+| `sw/build-nuttx.sh` | New | One command: patch once, configure, build, collect output |
+| `sw/configs/nsh-hart1/defconfig` | New | NuttX configuration for hart 1: NSH, `ostest`, our apps, no SMP |
+| `sw/chipwings-apps/hartinfo` | New | NSH command that prints the physical hart ID |
+| `examples/nuttx/cw_timer`, `cw_threads` | New | Timer and threading tests (see lesson 6) |
+| `sim/phase1/nuttx-hart1.resc` | New | Halt other cores, load the ELF on `u54_1` |
+| `sim/phase1/run.sh` | New | GUI or headless launcher |
+| `sim/phase1/check-one-core.sh` | New | Instruction counts per core |

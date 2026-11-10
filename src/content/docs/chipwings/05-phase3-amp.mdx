@@ -1,0 +1,62 @@
+---
+title: "5. Phase 3: both together (AMP)"
+description: "Running NuttX on hart 1 and Linux on harts 2-4 at the same time, and the isolation test that shows neither disturbs the other."
+lesson:
+  module: "Chipwings module"
+  level: Advanced
+  time: "15 min"
+---
+
+import LearningObjectives from '../../../components/LearningObjectives.astro';
+
+<LearningObjectives outcomes={[
+  "Explain why NuttX had to be relinked and what the new linker script contains.",
+  "Describe what amp.resc combines from Phases 1 and 2.",
+  "Interpret the isolation result: three busy loops in Linux versus ostest on NuttX."
+]} />
+
+## Why
+
+Phase 3 is the first run where both fixes from the earlier phases (NuttX `mtimecmp` patch, Linux `&clint` device tree) are used together. It asks: *do the two systems coexist without interfering?* No communication yet; this is only isolation.
+
+## How
+
+### Relink NuttX into reserved memory
+
+In Phase 1, NuttX lived at `0x80000000`, which is where Linux's OpenSBI sits. Now NuttX moves to the region the Linux device tree reserves (`nuttx@a2000000`, `no-map`).
+
+Config `sw/configs/nsh-amp-hart1` is the Phase 1 defconfig with `CONFIG_RAM_START=0xa2200000`, plus its own `ld.script`: program memory 2 MiB at `0xA2000000`, RAM 1 MiB at `0xA2200000` (the same split as the board's `ld-ihc.script`). `build-nuttx.sh` was extended to honour a config's `ld.script` and to copy each build into `sw/out/<config>/`. There is no NuttX source change in this phase.
+
+```sh
+sw/build-nuttx.sh nsh-amp-hart1       # entry 0xa2000000
+sim/phase3/run.sh headless            # NSH 33457, Linux 33458, monitor 33456
+sim/phase1/check-one-core.sh          # e51 halted, u54_1 in 0xA2xxxxxx, u54_2..4 in the kernel
+```
+
+`sim/phase3/amp.resc` is Phase 1 plus Phase 2 in one machine: only the E51 is halted, NuttX loads on `u54_1`, OpenSBI on `u54_2`, the kernel and device tree as before. Both prompts appear after about 2 s.
+
+### The isolation test
+
+1. Start three busy loops in Linux (load average 2.96 on harts 2-4).
+2. Run `ostest` in NuttX at the same time.
+
+Results:
+
+| Check | Result |
+|---|---|
+| `ostest` | Passed all 32 groups, exit 0, 544 s host time (about 4 minutes alone in Phase 1) |
+| Linux `dmesg` | No RCU stalls, no soft lockups, no oopses |
+| `riscv-timer` interrupts | Even across Linux's three CPUs (61-63k each) |
+| Uptime | NuttX and Linux agree: one shared CLINT `mtime` |
+| NuttX heap | Grew by 464 B, same as in Phase 1 |
+
+The slower `ostest` is expected: Renode shares host CPU between the harts.
+
+## Files
+
+| File | Change | Reason |
+|---|---|---|
+| `sw/configs/nsh-amp-hart1/defconfig` | New | Phase 1 config with `RAM_START=0xa2200000` |
+| `sw/configs/nsh-amp-hart1/ld.script` | New | Link into the reserved DDR region |
+| `sw/build-nuttx.sh` | Extended | Use a config's `ld.script`; save each build to `sw/out/<config>/` |
+| `sim/phase3/amp.resc`, `run.sh` | New | Both systems in one Renode machine |

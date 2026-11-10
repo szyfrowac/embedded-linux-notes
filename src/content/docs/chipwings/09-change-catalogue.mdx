@@ -1,0 +1,150 @@
+---
+title: "9. Every file we changed"
+description: "The complete catalogue of patches, ports, configurations, simulator code and scripts we wrote or modified, grouped by component, with the reason and whether the change matters on real hardware."
+lesson:
+  module: "Chipwings module"
+  level: Advanced
+  time: "20 min"
+---
+
+import LearningObjectives from '../../../components/LearningObjectives.astro';
+
+<LearningObjectives outcomes={[
+  "Find any changed file and say why it exists.",
+  "Separate changes that must go to the board from changes that exist only for Renode.",
+  "Know which upstream projects we have bug fixes for."
+]} />
+
+Use this page as a reference when a teammate asks "what did you change in X?". Every row links back to a lesson that explains it.
+
+**Kinds**: **Bug** = upstream code was wrong (also on hardware). **Add** = a piece the design needs that did not exist. **Sim** = Renode only. **Test** = scripts that check the system.
+
+**Board?** says whether the change matters on the Icicle Kit.
+
+## A. Patches to upstream code
+
+These are the changes most worth presenting: each one is a real defect or gap in a third-party project.
+
+### NuttX 13.1 (`sw/patches/`, applied by `build-nuttx.sh`)
+
+| Patch | File patched | Kind | What and why | Board? | Lesson |
+|---|---|---|---|---|---|
+| 0001 | `arch/risc-v/src/mpfs/mpfs_timerisr.c` | Bug | Pass the base `mtimecmp` address. `riscv_mtimer` already adds `8 * cpu_index`, so hart 1 programmed hart 2's timer and never got a tick. | Yes | 3 |
+| 0002 | `arch/risc-v/src/mpfs/mpfs_ihc.c` | Add | Put the RPMsg resource table first in its struct and in section `.resource_table`, so the linker can pin it at `0xA2300000` where Linux looks. | Yes | 6 |
+| 0003 | `mpfs_ihc.c` | Bug | Only treat a message as present when its MP bit is set (stale ack/message loop). Retry the notify with delay and log if it is lost. | Yes | 6 |
+| 0004 | `mpfs_ihc.c` | Bug | Control register writes that do not mean to consume a message now write MP=1 (`MP_KEEP`). Fixes a read-modify-write race that ate messages. | Yes | 6 |
+| 0005 | `mpfs_ihc.c` | Bug | Bound the notify retry budget to about 1 ms (was about a second per failed notification). A dead Linux no longer stalls the sender. | Yes | 8 |
+
+### PX4 (`sw/px4-patches/`, applied once by `build-px4.sh`)
+
+| Patch | File patched | Kind | What and why | Board? |
+|---|---|---|---|---|
+| 0001 | `platforms/nuttx/cmake/px4_impl_os.cmake` | Add | Detect `CONFIG_ARCH_CHIP_MPFS` and choose `microchip/mpfs` | Yes |
+| 0002 | `platforms/common/include/px4_platform_common/board_common.h` | Add | `PX4_SOC_ARCH_ID_MPFS = 0x000A` | Yes |
+| 0003 | `src/lib/controllib/controllib_test/CMakeLists.txt` | Bug | Declare the missing `controllib` and `mathlib` dependencies | Yes |
+| 0004 | `src/systemcmds/param/param.cpp` | Bug | Treat an empty backup file name as "none" (NuttX `open("")` is `ENXIO`) | Yes |
+| 0005 | `platforms/nuttx/CMakeLists.txt`, `platforms/nuttx/NuttX/CMakeLists.txt` | Add | Build and link NuttX `openamp/` when `CONFIG_OPENAMP` is set | Yes |
+| 0006 | `platforms/nuttx/src/px4/common/tasks.cpp` | Bug | Scale task stacks by pointer size. 32-bit stack sizes overflowed on RV64 and corrupted the heap. | Yes |
+
+### PX4's NuttX fork (12.12), applied by `build-px4.sh`
+
+| Patch | Source | Why |
+|---|---|---|
+| resource table | `sw/patches/0002` | Same as NuttX 13.1 |
+| IHC fixes | `sw/px4-patches/nuttx/0003`, `0004`, `0005` | The three IHC patches, rebased for the fork. 0005 uses the real `mpfs` path because `arch/risc-v/src/chip` is a symlink there and git refuses to patch through it. |
+| (none) | `sw/patches/0001` is **not** applied | 12.12's `riscv_mtimer` adds no per-hart offset; applying it would break hart 1's tick |
+
+### OpenSBI (`sw/br2-chipwings/patches/opensbi/`)
+
+| Patch | Kind | What and why | Board? |
+|---|---|---|---|
+| `0001-platform-generic-add-Microchip-PolarFire-SoC-Mi-V-IHC-SBI-extension.patch` | Add | Adds the Microchip vendor SBI extension (`0x09000029`): IHC init, tx, rx, remoteproc state. Ported from HSS. Also writes MP=1 on control updates (same race as NuttX 0004). | **No**: HSS provides this on the board. Needed only because Renode skips HSS. |
+
+## B. New components we wrote
+
+### NuttX side (Phases 1-4)
+
+| File | Kind | What and why |
+|---|---|---|
+| `sw/build-nuttx.sh` | Add | Patch once, link our apps, configure `icicle:nsh`, apply a defconfig and optional `ld.script`, build, collect |
+| `sw/configs/nsh-hart1/defconfig` | Add | Phase 1: NuttX alone at `0x80000000` |
+| `sw/configs/nsh-amp-hart1/{defconfig,ld.script}` | Add | Phase 3: link at `0xA2000000`, RAM at `0xA2200000` |
+| `sw/configs/nsh-rpmsg-hart1/{defconfig,ld.script}` | Add | Phase 4: IHC client, rptun, RPMsg ping, `.resource_table` at `0xA2300000` |
+| `sw/chipwings-apps/hartinfo` | Add | Print the physical hart ID and SMP state |
+| `sw/chipwings-apps/cwinit` | Add | Init entry point: start rptun, then NSH |
+| `examples/nuttx/{cw_timer,cw_threads,cw_rpmsg_echo,cw_rpmsg_imu}` | Test | NuttX test programs |
+
+### Linux side (Phases 2-4)
+
+| File | Kind | What and why |
+|---|---|---|
+| `sw/build-linux.sh` | Add | Buildroot wrapper |
+| `sw/br2-chipwings/configs/chipwings_mpfs_linux_defconfig` | Add | Our Linux image (initramfs, OpenSBI at `0x80000000`, console on MMUART3, stress-ng, examples) |
+| `sw/br2-chipwings/board/mpfs-linux/linux.fragment` | Add | `BLK_DEV_INITRD`, `MAGIC_SYSRQ`, `RPMSG_TTY` |
+| `sw/br2-chipwings/board/mpfs-linux/dts/microchip/chipwings-mpfs-linux.dts` | Add | Harts 2-4, `&clint` fix (**Bug, Board: yes**), reserved memory (**Add, yes**), IHC and remoteproc nodes (**Add, yes**), `clkcfg` and `syscontroller` disabled and fixed MMUART3 clock (**Sim: revert on the board**) |
+| `sw/br2-chipwings/package/chipwings-examples/` | Add | Buildroot package that builds `examples/linux` |
+| `sw/br2-chipwings/{Config.in,external.desc,external.mk}` | Add | External tree files |
+| `examples/linux/{hartcheck,rpmsg_ping,rpmsg_echo,rpmsg_imu,cw_rpmsg_util}.c`, `Makefile` | Test | Linux test programs |
+| `examples/linux/mavlink_link.c`, `mavlink_crcs.h` | Add | Phase 5 Linux MAVLink peer |
+| `examples/common/cw_rpmsg_proto.h` | Add | Wire format shared by both sides |
+
+### PX4 port (Phase 5)
+
+| File | Kind | What and why |
+|---|---|---|
+| `sw/build-px4.sh` | Add | Toolchain shim, venv, copy port, apply patches, rebuild on defconfig change |
+| `sw/px4-chipwings/platforms/nuttx/src/px4/microchip/**` | Add | Chip layer: `hrt`, `version`, `board_reset`, `board_critmon`, `px4_arch` headers |
+| `sw/px4-chipwings/boards/chipwings/mpfs-hart1/default.px4board` | Add | Which PX4 modules are built |
+| `.../src/init.cpp`, `board_config.h`, `CMakeLists.txt` | Add | Board init and configuration |
+| `.../src/rpmsg.c` | Add | Start IHC and rptun from a low-priority thread |
+| `.../src/rpmsg_tty.c` | Add | `/dev/ttyRPMSG0`, raw bytes, 3 s liveness gate |
+| `.../init/rc.board_early`, `rc.board_defaults`, `rc.board_mavlink` | Add | tmpfs storage; SIH airframe and link-loss defaults; MAVLink streams |
+| `.../nuttx-config/{nsh/defconfig,scripts/script.ld,include/*}` | Add | NuttX config, link script with explicit PHDRS, memory map |
+
+### Simulator (`sim/`)
+
+| File | Kind | What and why |
+|---|---|---|
+| `sim/platforms/chipwings-mpfs.repl` | Sim | Stock `polarfire-soc.repl` with Safe CPUs, Safe CLINT, and the IHC |
+| `sim/peripherals/MiV_IHC.cs` | Sim | Mi-V IHC v1 model |
+| `sim/peripherals/SafeIrqRiscV64.cs` | Sim | Cross-thread interrupt changes applied at a synced state |
+| `sim/peripherals/SafeIpiCoreLevelInterruptor.cs` | Sim | CLINT whose msip line always matches the register |
+| `sim/phase0/*.resc` | Sim | Stock demos |
+| `sim/phase1/{nuttx-hart1.resc,run.sh,check-one-core.sh}` | Sim | NuttX alone |
+| `sim/phase2/{linux-harts234.resc,run.sh}` | Sim | Linux alone |
+| `sim/phase3/{amp.resc,run.sh}` | Sim | Both |
+| `sim/phase4/{rpmsg.resc,run.sh}` | Sim | RPMsg |
+| `sim/phase5/{px4.resc,px4-linux.resc,run.sh}` | Sim | PX4 alone, PX4 with Linux (10 us quantum) |
+
+### Tests
+
+| File | Kind | What it checks |
+|---|---|---|
+| `sim/phase4/rpmsg_test.py` | Test | Round trips on `/dev/rpmsg0`, payload checked |
+| `examples/run_examples.py` | Test | Runs all eight programs (6 pass/fail groups) |
+| `sim/phase5/phase5_test.py` | Test | The 30-check Phase 5 suite |
+| `sim/phase5/isolation_test.py` | Test | Hover under load and Linux crash |
+| `sim/common/cwconsole.py` | Test | Shared console class: a Renode socket or a board serial port |
+
+## C. Uncommitted work in the tree right now
+
+At the time of writing, `git status` shows changes not yet committed. Say this to teammates so nobody is surprised:
+
+| File | State | Purpose |
+|---|---|---|
+| `sim/common/cwconsole.py` | New, untracked | Shared `Console` class and `--target renode` or `--target board` arguments, taken out of three scripts |
+| `sim/phase4/rpmsg_test.py` | Modified | Uses `cwconsole`; gains `--target board` and `--linux-serial` |
+| `examples/run_examples.py` | Modified | Uses `cwconsole`; gains `--target board`, `--nsh-serial`, `--linux-serial` |
+| `ISSUES.md` | New, untracked | Open items (summarised in lesson 10) |
+
+These three scripts were refactored to remove duplicated socket code and to carry out plan addition A (running the same tests on the board). The refactor has not been exercised against a live simulation or the board yet. Run `sim/phase4/rpmsg_test.py 500` and `examples/run_examples.py` once before committing.
+
+## D. What goes to the board, summarised
+
+| Changes | On the Icicle Kit |
+|---|---|
+| NuttX patches 0001-0005, PX4 patches, PX4 port, device tree hart/memory/IHC nodes | **Yes**: real code |
+| OpenSBI IHC extension | No: HSS provides it |
+| Device tree `clkcfg`, `syscontroller` and MMUART3 clock edits | No: revert (HSS sets clocks) |
+| `sim/` peripherals, platform, `.resc` files | No: Renode only |
+| Test scripts | Yes, with `--target board` |

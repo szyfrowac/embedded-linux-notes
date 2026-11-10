@@ -1,0 +1,49 @@
+---
+// Two menus in one Starlight sidebar: the embedded Linux course, and the Chipwings module.
+// Under /chipwings/ only the Chipwings group is shown; everywhere else that group is hidden.
+// A switcher at the top links the two. The group is found by its label (chipwings.title).
+import Default from '@astrojs/starlight/components/Sidebar.astro';
+import { chipwings, modules } from '../../data/curriculum.mjs';
+
+const route = Astro.locals.starlightRoute;
+const inChipwings = route.id.startsWith('chipwings/');
+const isChipwingsGroup = (entry: { type: string; label: string }) => entry.type === 'group' && entry.label === chipwings.title;
+
+route.sidebar = route.sidebar.filter((entry) => (inChipwings ? isChipwingsGroup(entry) : !isChipwingsGroup(entry)));
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const tabs = [
+  { label: 'Embedded Linux course', href: `${base}/${modules[0].lessons[0].slug}/`, current: !inChipwings },
+  { label: chipwings.title, href: `${base}/${chipwings.lessons[0].slug}/`, current: inChipwings },
+];
+---
+
+<nav class="fd-menu-switch not-content" aria-label="Menus">
+  {tabs.map((t) => <a href={t.href} aria-current={t.current ? 'page' : undefined}>{t.label}</a>)}
+</nav>
+<Default />
+
+<style>
+  .fd-menu-switch {
+    display: grid;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+    padding: 0.25rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 0.5rem;
+    background: var(--sl-color-bg-nav);
+  }
+  .fd-menu-switch a {
+    padding: 0.4rem 0.6rem;
+    border-radius: 0.35rem;
+    color: var(--sl-color-gray-2);
+    font-size: var(--sl-text-sm);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .fd-menu-switch a:hover { color: var(--sl-color-white); }
+  .fd-menu-switch a[aria-current='page'] {
+    background: var(--sl-color-accent-low);
+    color: var(--sl-color-white);
+  }
+</style>

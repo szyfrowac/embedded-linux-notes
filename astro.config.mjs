@@ -28,6 +28,7 @@ export default defineConfig({
       ],
       customCss: ['./src/styles/flightdeck.css'],
       components: {
+        Sidebar: './src/components/overrides/Sidebar.astro',
         PageTitle: './src/components/overrides/PageTitle.astro',
         Footer: './src/components/overrides/Footer.astro',
         TableOfContents: './src/components/overrides/TableOfContents.astro',

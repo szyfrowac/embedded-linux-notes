@@ -1,0 +1,115 @@
+---
+title: "1. Architecture and memory map"
+description: "The five RISC-V cores of the PolarFire SoC, how we divide them between NuttX/PX4 and Linux, and the DDR layout that keeps them apart."
+lesson:
+  module: "Chipwings module"
+  level: Advanced
+  time: "25 min"
+---
+
+import LearningObjectives from '../../../components/LearningObjectives.astro';
+import Stack from '../../../components/diagrams/Stack.astro';
+
+<LearningObjectives outcomes={[
+  "Name the five harts and say which software runs on each.",
+  "Read the DDR memory map and say why each region is reserved.",
+  "Explain the three mechanisms that keep the two sides apart: separate harts, no-map memory, separate timers.",
+  "Describe how the boot flow differs between the board and Renode."
+]} />
+
+## Why this partition
+
+The PolarFire SoC has five RISC-V cores, called **harts** (hardware threads):
+
+| Hart | Core | Role in Chipwings |
+|---|---|---|
+| 0 | E51 (RV64IMAC, no MMU, no FPU) | Monitor core. On the board it runs HSS, Microchip's boot service. In Renode it is halted. |
+| 1 | U54 (RV64GC, FPU, MMU) | **Flight core**: NuttX, later PX4. |
+| 2, 3, 4 | U54 | **Linux SMP**, three CPUs. |
+
+The E51 has no FPU, which PX4's float-heavy estimator needs, so flight control goes on a U54. We gave it one dedicated U54 so that no Linux task can ever be scheduled on its core. We left three U54s to Linux because it benefits from SMP and the flight loop does not.
+
+## How the sides are kept apart
+
+Three mechanisms, each of which broke at least once while we built this:
+
+1. **Separate harts.** Each OS is told which harts it owns. NuttX is built without SMP and uses `mhartid` 1. Linux's device tree lists only harts 2-4 (`/proc/cpuinfo` shows exactly those).
+2. **Separate memory.** The Linux device tree reserves the flight and shared regions as `reserved-memory` with `no-map`, so Linux never maps them. Nothing but PMP hardware enforces this on the board (see the open issue about PMP in [lesson 10](../10-testing-and-next-steps/)).
+3. **Separate timers.** Every hart has its own `mtimecmp` register in the CLINT. If one OS programs another hart's comparator, that hart gets timer interrupts it did not ask for. Both Phase 1 and Phase 2 found a bug of exactly this kind.
+
+The one shared resource is the CLINT `mtime` counter, which is read-only for both sides and is useful: NuttX and Linux agree on time.
+
+<Stack
+  caption="Who owns what. The dashed boundary in the middle is the only thing the two sides share."
+  zones={[
+    { "label": "Mission side", "tone": "app", "layers": [
+      { "title": "Linux userspace", "detail": "mavlink_link, test programs, stress-ng" },
+      { "title": "Linux kernel on harts 2-4", "detail": "virtio_rpmsg_bus, rpmsg_tty, miv_remoteproc, miv-ihc mailbox" },
+      { "title": "OpenSBI (generic) + Chipwings IHC extension", "detail": "M-mode firmware; replaces what HSS provides on the board" }
+    ]},
+    { "label": "Shared", "tone": "hw", "boundary": "Shared DDR and IHC", "layers": [
+      { "title": "Resource table, vrings, RPMsg buffers", "detail": "0xA2300000 to 0xA244FFFF" },
+      { "title": "Mi-V IHC doorbell", "detail": "Fabric IP at 0x50000000; PLIC interrupts 177-180" }
+    ]},
+    { "label": "Flight side", "tone": "kernel", "boundary": "Hart 1", "layers": [
+      { "title": "PX4 modules: EKF2, controllers, commander, mavlink", "detail": "Phase 5" },
+      { "title": "NuttX on hart 1", "detail": "rptun/OpenAMP, rpmsg_tty, hrt, IHC driver" }
+    ]}
+  ]}
+/>
+
+## DDR memory map
+
+DDR starts at `0x80000000`. The Linux side lives at the bottom; everything from `0xA2000000` up to `0xA403FFFF` is reserved for the flight side and the shared rings.
+
+| Address range | Size | Contents | Used from |
+|---|---|---|---|
+| `0x80000000` | 2 MiB | OpenSBI `fw_jump`, harts 2-4 | Phase 2 |
+| `0x80200000` | about 158 MiB | Linux `Image` with the initramfs | Phase 2 |
+| `0x8A000000` | 1 MiB | Device tree blob, passed in `a1` | Phase 2 |
+| `0xA2000000` | 2 MiB | NuttX code (Phases 3-4) | Phase 3 |
+| `0xA2200000` | 1 MiB | NuttX data and heap (Phases 3-4) | Phase 3 |
+| `0xA2300000` | 4 KiB | RPMsg **resource table** | Phase 4 |
+| `0xA2400000` / `0xA2408000` | 32 KiB each | vring0 and vring1 | Phase 4 |
+| `0xA2410000` | 256 KiB | RPMsg message buffers (`vdev0buffer`) | Phase 4 |
+| `0xA2450000` | | PX4 code (hart 1) | Phase 5 |
+| `0xA3050000` | | PX4 RAM | Phase 5 |
+| up to `0xA403FFFF` | | end of the reserved block | |
+
+In Phase 1 (NuttX alone) NuttX links at `0x80000000`, because no Linux exists yet. Moving it into the reserved region is the whole point of Phase 3.
+
+The device tree entries that implement this are in `sw/br2-chipwings/board/mpfs-linux/dts/microchip/chipwings-mpfs-linux.dts`:
+
+```dts
+reserved-memory {
+    nuttx_fw: nuttx@a2000000 {
+        reg = <0x0 0xa2000000 0x0 0x00300000>;   /* 3 MiB: 2 MiB code + 1 MiB RAM */
+        no-map;
+    };
+    rsc_table: rsc-table@a2300000 {
+        reg = <0x0 0xa2300000 0x0 0x00001000>;   /* where Linux finds NuttX's resource table */
+        no-map;
+    };
+    /* vdev0buffer (shared-dma-pool, must be first), vdev0vring0, vdev0vring1 follow */
+};
+```
+
+## Boot flow: board versus Renode
+
+| Step | Icicle Kit (target) | Renode (what we run) |
+|---|---|---|
+| First code | E51 runs HSS from eNVM | E51 halted; Renode loads images straight into DDR |
+| Starts the U54s | HSS, one image per hart | The `.resc` script sets PCs with `LoadELF` |
+| Linux firmware | HSS carries OpenSBI | We run **generic OpenSBI** `fw_jump` ourselves on hart 2 |
+| Vendor SBI calls (IHC) | HSS implements them | **Our OpenSBI patch** implements them |
+| Clocks and resets | HSS programs them | The device tree uses a fixed 150 MHz clock and disables `clkcfg` |
+
+Every difference in this table is a place where Renode is not the board. The HSS boot path is untested until hardware (issue 5 in [lesson 10](../10-testing-and-next-steps/)).
+
+## Files
+
+| File | Why it exists |
+|---|---|
+| `sw/br2-chipwings/board/mpfs-linux/dts/microchip/chipwings-mpfs-linux.dts` | Linux device tree: harts 2-4, reserved regions, IHC and remoteproc nodes, Renode-only fixes |
+| `sim/platforms/chipwings-mpfs.repl` | Renode platform: stock PolarFire SoC plus our three changes (lesson 6) |
+| `px4-mpfs-plan.html` | The plan, with the Icicle Kit validation ladder H0-H6 |

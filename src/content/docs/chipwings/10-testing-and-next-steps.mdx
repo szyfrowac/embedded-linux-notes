@@ -1,0 +1,100 @@
+---
+title: "10. Tests, open issues, hardware"
+description: "How to run every test, the open issues and design constraints to keep in mind, and the hardware ladder H0-H6 that takes the system from Renode to the Icicle Kit."
+lesson:
+  module: "Chipwings module"
+  level: Advanced
+  time: "25 min"
+---
+
+import LearningObjectives from '../../../components/LearningObjectives.astro';
+import Exercise from '../../../components/Exercise.astro';
+
+<LearningObjectives outcomes={[
+  "Run every test in the repository and say what a pass proves.",
+  "List the open issues and which one needs a decision first.",
+  "Explain the hardware ladder H0-H6 and what blocks it today.",
+  "State plainly what the simulator results do and do not prove."
+]} />
+
+## What was proven, and what was not
+
+All results in this module are from **Renode**, not the board.
+
+| Proven in simulation | Not proven |
+|---|---|
+| The software logic: NuttX and Linux run on separate harts; RPMsg is reliable (2000/2000); PX4 flies a closed loop; Linux load or a crash does not stop PX4; link loss lands the vehicle | Real timing (Renode is not cycle accurate), L2 and DDR contention between harts, the HSS boot path, the real IHC's exact register semantics, PMP isolation, any sensor or motor |
+
+## Test catalogue
+
+| Test | Start with | Pass means |
+|---|---|---|
+| `sim/phase1/check-one-core.sh` | Phase 1 or 3 run | Only the intended cores execute instructions |
+| `ostest` in NSH | Phase 1 or 3 run | All groups pass (30 alone, 32 under Linux load) |
+| `sim/phase4/rpmsg_test.py 500` | `sim/phase4/run.sh headless` | 500 round trips intact |
+| `examples/run_examples.py` | `sim/phase4/run.sh headless` | 6/6 groups pass |
+| `sim/phase5/phase5_test.py` | `sim/phase5/run.sh headless` | 13/13: PX4 alone |
+| `sim/phase5/phase5_test.py --linux` | `run.sh headless linux` | 15/15 with Linux attached |
+| `sim/phase5/phase5_test.py --linux --flight` | `run.sh headless linux` | 30/30, about 15 minutes |
+| `sim/phase5/isolation_test.py` | `run.sh headless linux` | Hover holds under stress and Linux panic |
+
+Rules: run the Phase 5 suite **once per boot** (dmesg lines scroll out; the flight ends with Linux gone). Stop an instance with `sim/phase5/run.sh stop`, not `kill`: `kill` returns before Renode exits and a restart races the ports. Renode's telnet monitor takes **one connection at a time**.
+
+## Open issues
+
+Full list in `ISSUES.md` (24 items). The ones to know:
+
+### Needs a decision or work
+
+| # | Item | Notes |
+|---|---|---|
+| 1 | `perf latency` check is marginal | 99% of callouts within 25 us; measured 98.6-99.3% with the flight stack running, so it fails about half the time. Threshold unchanged on purpose. Options: measure with the flight stack idle, raise the allowance, or accept a lower figure and document it. |
+| 4 | `--target board` | Now in `phase5_test.py`; added to `rpmsg_test.py` and `run_examples.py` as uncommitted changes (lesson 9, section C) |
+| 5 | HSS boot rehearsal not done | Renode skips HSS, so the HSS boot path is untested until the board |
+| 6 | MSS watchdog for hart 1 | Planned for Phase 6 |
+| 7 | Hardware blocked | Power supply not delivered (as of 2026-10-31); no serial device visible on the laptop on 2026-11-09 |
+
+### Constraints to remember
+
+| # | Constraint | Consequence |
+|---|---|---|
+| 8 | PX4 refuses to arm without a data link | `NAV_DLL_ACT 3` and `COM_DL_LOSS_T 5` need a GCS-type heartbeat. At H3 set `NAV_DLL_ACT 0` or provide a MAVLink peer. |
+| 9 | Linux must speak first and keep speaking | `rpmsg_tty.c` cannot send until Linux has sent, and drops output after 3 s of silence |
+| 10 | IHC notify budget is about 1 ms | A live but slow Linux (over 1 ms to acknowledge) would lose a kick. Measure on the board. |
+| 11 | A dead Linux still costs PX4 something | 255 failed notifications at about 1 ms each before the liveness gate closes. Measure at H4. |
+| 12 | No L2 or DDR contention in Renode | Repeat the isolation tests at H4 |
+| 13 | 100-1000 us HRT callouts | 16-34 of 100,000-200,000 callouts (0.02-0.03%), none over 1 ms. Not investigated; may be Renode scheduling. |
+| 14 | `board_reset` resets the whole chip | On hardware it reboots Linux too; ask HSS for a hart-1-only restart |
+| 15 | Linux might be able to write PX4 memory | HSS PMP must leave Linux no write access outside the shared region. Verify at H2. |
+| 16 | IHC v1 or rtl-v2? | The model and driver assume v1; check the 2025 reference design at H0 |
+| 17 | `CONFIG_RPMSG_UART=y` is a workaround | Set only for the serial DMA side effect (lesson 8) |
+
+## The hardware ladder
+
+From `px4-mpfs-plan.html`. Safety rule: **props stay off until H5 passes.**
+
+| Rung | What | Pass means |
+|---|---|---|
+| H0 | Microchip's AMP demo on the 2025 reference design, unchanged | Board, HSS and IHC at `0x50000000` confirmed; IHC version checked |
+| H1 | Our NuttX `nsh` on hart 1 through an HSS payload | `ostest` passes |
+| H2 | Our Linux on harts 2-4 plus NuttX, RPMsg | `rpmsg_test.py 2000` and the 6 examples pass over serial; PMP verified |
+| H3 | PX4 alone on hart 1 | Phase 5 step 5 checks; MSS timer measured against `mtime`; real DSN read; real `perf latency` |
+| H4 | PX4 + Linux + SIH, nothing on the motors | Steps 6-8 checks including isolation; multi-hour soak with no stall, fault or EKF reset |
+| H5 | Real sensors and PWM to ESCs on the bench, props off | Sensor rates and noise in spec; motor order and direction correct; failsafes fire |
+| H6 | Tethered, props on, then free flight | Clean hover logs on the tether before any untethered flight |
+
+Serial consoles on the board (typical numbering): `/dev/ttyUSB1` is MMUART1 (NuttX or PX4), `/dev/ttyUSB3` is MMUART3 (Linux). The order depends on enumeration.
+
+Before H0, a few edits revert or change: the Renode-only device tree lines, the OpenSBI extension (HSS replaces it), and `NAV_DLL_ACT` for H3.
+
+<Exercise
+  title="Lab: read a failing check"
+  difficulty="Advanced"
+  instructions="You run `phase5_test.py --linux --flight` and the 'link loss' check fails with 'GCS heartbeat valid' in the diagnostics block, even though you froze harts 2-4. Using what lesson 8 says about the test harness, name the most likely cause and how the suite now guards against it."
+  hints={[
+    "How many connections does Renode's telnet monitor serve at once?",
+    "What does the suite read back after sending the freeze command?"
+  ]}
+  expectedOutcome="A leaked monitor connection made the freeze command a silent no-op, so Linux kept sending heartbeats. The suite now closes every Monitor and reads IsHalted back, failing with 'Linux is really gone' if the freeze did not take."
+  solution="Renode's monitor accepts a second connection but ignores its commands. The earlier suite left a monitor socket open, so `sysbus.u54_N IsHalted true` was never applied. PX4 kept receiving MAVLink heartbeats and correctly never declared link loss. The guard: close every Monitor, then read IsHalted back and fail if it is not true."
+/>

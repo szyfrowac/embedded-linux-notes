@@ -1,0 +1,118 @@
+---
+title: "Chipwings module: overview"
+description: "What the Chipwings project is, why we built it in phases, how each phase was verified, and a map of every program and file we changed."
+lesson:
+  module: "Chipwings module"
+  level: Advanced
+  time: "20 min"
+---
+
+import LearningObjectives from '../../../components/LearningObjectives.astro';
+import Domains from '../../../components/diagrams/Domains.astro';
+import Flow from '../../../components/diagrams/Flow.astro';
+
+<LearningObjectives outcomes={[
+  "Explain in two minutes what Chipwings is and why it runs two operating systems on one chip.",
+  "Name the six phases, what each one proves, and the test that proves it.",
+  "Find, for any file we changed, the reason for the change and the lesson that explains it.",
+  "Tell the difference between a bug in upstream code, a missing piece we had to add, and a limit of the simulator."
+]} />
+
+## The project in one paragraph
+
+Chipwings is a single-chip avionics computer for a drone, built on the **Microchip PolarFire SoC** (the Icicle Kit board). One core runs the **PX4 flight controller** on the **NuttX** real-time OS. Three other cores run **Linux** for the mission computer (video, networking, autonomy). The two sides exchange messages through shared memory and a hardware mailbox. If Linux crashes, the drone keeps flying.
+
+Everything so far runs in the **Renode** simulator. The Icicle Kit is owned but not yet powered, so hardware bring-up is the next stage (see [lesson 10](../10-testing-and-next-steps/)).
+
+<Domains
+  caption="The target design: two software domains on one chip, joined by shared DDR and the Mi-V IHC doorbell."
+  domains={[
+    { "title": "Flight domain", "cores": "U54 hart 1", "os": "NuttX + PX4", "tone": "boot",
+      "items": ["EKF2 state estimator", "Attitude and position control", "Hard real-time timers (HRT)", "Runs with or without Linux"] },
+    { "title": "Mission domain", "cores": "U54 harts 2-4", "os": "Linux SMP (Buildroot)", "tone": "app",
+      "items": ["Companion software", "MAVLink endpoint /dev/ttyRPMSG0", "stress-ng, test tools", "May crash without affecting flight"] }
+  ]}
+  link={{ "title": "RPMsg over Mi-V IHC", "detail": "Virtqueues in shared DDR; interrupts through the IHC mailbox at 0x50000000" }}
+/>
+
+## 1. Why: the reasons behind the design
+
+| Question | Answer |
+|---|---|
+| Why two operating systems? | A flight loop needs microsecond-level timing that Linux cannot promise. Video and networking need what Linux has. AMP (asymmetric multiprocessing) gives each its own cores. |
+| Why PX4 on NuttX? | PX4 is a proven flight stack and its native OS is NuttX. We follow PX4's own STM32 port as the model rather than a small custom port. |
+| Why Renode first? | The board's power supply has not arrived. A simulator lets us find software bugs now, and every test is written so it can run against the board later (`--target board`). |
+| Why phases? | Each phase adds one thing to a system that already works. When something breaks, the cause is in the last thing we added. |
+
+## 2. How: the phase ladder
+
+<Flow
+  caption="Each phase keeps everything before it working and adds one new capability."
+  steps={[
+    { "label": "Phase 0", "detail": "Renode baseline", "items": ["Stock FreeRTOS and Linux demos", "Learn the simulator"] },
+    { "label": "Phase 1", "detail": "NuttX alone", "items": ["Hart 1 only", "ostest passes"] },
+    { "label": "Phase 2", "detail": "Linux alone", "items": ["Harts 2-4 only", "Boots to login"] },
+    { "label": "Phase 3", "detail": "AMP", "items": ["Both at once", "No interference"] },
+    { "label": "Phase 4", "detail": "RPMsg", "items": ["IHC mailbox", "2000/2000 round trips"] },
+    { "label": "Phase 5", "detail": "PX4", "items": ["Flight stack on hart 1", "MAVLink to Linux", "30/30 tests"] }
+  ]}
+/>
+
+The method every phase followed:
+
+1. **State the claim** the phase must prove (for example "NuttX runs on hart 1 and no other core").
+2. **Build the smallest change** that could make the claim true.
+3. **Write a check that can fail** (a script, not a screenshot). Check the claim, not just "it booted".
+4. **Chase every failure to its root cause.** Most of our edits are the result of this step, and several were real upstream bugs.
+5. **Record the result** with numbers, so the next phase can tell a regression from a pre-existing problem.
+
+## 3. What: where the changes are
+
+The repository root is `Chipwings/`. Each lesson ends with a "Files" section; the complete table is in [lesson 9](../09-change-catalogue/).
+
+| Area | Location | What we did |
+|---|---|---|
+| Simulator | `sim/` | Platform file, three C# peripherals, one launch script per phase, test scripts |
+| NuttX 13.1 (Phases 1-4) | `sw/patches/`, `sw/configs/`, `sw/chipwings-apps/` | 5 source patches, 3 configurations, 2 small apps |
+| Linux (Phases 2-4) | `sw/br2-chipwings/` | Buildroot external tree, device tree, kernel fragment, OpenSBI patch |
+| PX4 (Phase 5) | `sw/px4-chipwings/`, `sw/px4-patches/` | New chip layer and board, 6 PX4 patches, 3 NuttX-fork patches |
+| Test programs | `examples/` | NuttX and Linux programs, plus the runner script |
+| Build scripts | `sw/build-nuttx.sh`, `build-linux.sh`, `build-px4.sh` | Apply patches once, build, copy outputs |
+
+### Three kinds of change
+
+The reason for a change falls into one of three groups. We label them in every lesson.
+
+<div class="fd-panel">
+
+**Upstream bug.** The code was wrong, on hardware as well. Examples: the NuttX timer offset (patch 0001), the IHC lost-notification race (patches 0003-0005), PX4 stack sizes on 64-bit (PX4 patch 0006).
+
+**Missing piece.** Something the design needs that does not exist yet. Examples: the PX4 chip layer and board, the OpenSBI extension, `rpmsg_tty.c`, our resource-table placement.
+
+**Simulator fix.** Renode lacks a model or has a threading bug. These changes affect only `sim/`. Examples: the Mi-V IHC model, the lost-interrupt fix.
+
+</div>
+
+This matters when you present: a *simulator fix* is not needed on the board, an *upstream bug* is, and a *missing piece* is part of the product.
+
+## 4. Quick start for a teammate
+
+Build and run the whole thing (details in the repository `README.md` and each lesson):
+
+```sh
+sw/build-nuttx.sh nsh-rpmsg-hart1      # NuttX for Phase 4
+sw/build-linux.sh                      # Buildroot Linux, OpenSBI, device tree
+sw/build-px4.sh                        # PX4 for hart 1
+sim/phase5/run.sh headless linux       # PX4 + Linux in Renode
+sim/phase5/phase5_test.py --linux --flight   # 30 checks, about 15 minutes
+```
+
+Consoles: PX4 shell on `telnet localhost 33457`, Linux on `33458` (user `root`, password `root`), Renode monitor on `33456`.
+
+## 5. How to read the other lessons
+
+Every lesson from 2 to 8 has the same three parts:
+
+- **Why**: the goal of the phase and the problem we hit.
+- **How**: what we did, in order, including the commands.
+- **Files**: each file touched, with the reason in one line.
