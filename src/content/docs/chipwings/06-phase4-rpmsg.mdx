@@ -255,7 +255,8 @@ base 0x50000000
       0x00 version   0x04 control   0x08 local hart id   0x0C message size (words)
       0x20..0x2C message in [4]   0x30..0x3C message out [4]
  + 0x500*l + 0x400           aggregator for hart l                         (IHCIA)
-      0x00 version   0x04 INT_EN   0x08 MSG_AVAIL  (bit 2r = message from r, bit 2r+1 = ack from r)
+      0x00 version   0x04 INT_EN   0x08 MSG_AVAIL
+      MSG_AVAIL bit 2r = message from hart r, bit 2r+1 = ack from hart r
 ```
 
 Control register bits (same as Microchip's HSS `miv_ihc.c`):
