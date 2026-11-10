@@ -49,7 +49,7 @@ Full list in `ISSUES.md` (24 items). The ones to know:
 | # | Item | Notes |
 |---|---|---|
 | 1 | `perf latency` check is marginal | 99% of callouts within 25 us; measured 98.6-99.3% with the flight stack running, so it fails about half the time. Threshold unchanged on purpose. Options: measure with the flight stack idle, raise the allowance, or accept a lower figure and document it. |
-| 4 | `--target board` | Now in `phase5_test.py`; added to `rpmsg_test.py` and `run_examples.py` as uncommitted changes (lesson 9, section C) |
+| 4 | `--target board` | Now in all three scripts through `sim/common/cwconsole.py`. Tested on Renode only; the board path is untested (lesson 9, section C) |
 | 5 | HSS boot rehearsal not done | Renode skips HSS, so the HSS boot path is untested until the board |
 | 6 | MSS watchdog for hart 1 | Planned for Phase 6 |
 | 7 | Hardware blocked | Power supply not delivered (as of 2026-10-31); no serial device visible on the laptop on 2026-11-09 |

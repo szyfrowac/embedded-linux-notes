@@ -126,18 +126,18 @@ These are the changes most worth presenting: each one is a real defect or gap in
 | `sim/phase5/isolation_test.py` | Test | Hover under load and Linux crash |
 | `sim/common/cwconsole.py` | Test | Shared console class: a Renode socket or a board serial port |
 
-## C. Uncommitted work in the tree right now
+## C. Shared console refactor (committed after testing)
 
-At the time of writing, `git status` shows changes not yet committed. Say this to teammates so nobody is surprised:
+The three scripts below were refactored to remove duplicated socket code and to carry out plan addition A (running the same tests on the board). They were tested on a live Phase 4 simulation before being committed.
 
-| File | State | Purpose |
+| File | Change | Purpose |
 |---|---|---|
-| `sim/common/cwconsole.py` | New, untracked | Shared `Console` class and `--target renode` or `--target board` arguments, taken out of three scripts |
-| `sim/phase4/rpmsg_test.py` | Modified | Uses `cwconsole`; gains `--target board` and `--linux-serial` |
-| `examples/run_examples.py` | Modified | Uses `cwconsole`; gains `--target board`, `--nsh-serial`, `--linux-serial` |
-| `ISSUES.md` | New, untracked | Open items (summarised in lesson 10) |
+| `sim/common/cwconsole.py` | New | Shared `Console` class and `--target renode` or `--target board` arguments, taken out of three scripts |
+| `sim/phase4/rpmsg_test.py` | Edited | Uses `cwconsole`; gains `--target board` and `--linux-serial` |
+| `examples/run_examples.py` | Edited | Uses `cwconsole`; gains `--target board`, `--nsh-serial`, `--linux-serial` |
+| `ISSUES.md` | New | Open items (summarised in lesson 10) |
 
-These three scripts were refactored to remove duplicated socket code and to carry out plan addition A (running the same tests on the board). The refactor has not been exercised against a live simulation or the board yet. Run `sim/phase4/rpmsg_test.py 500` and `examples/run_examples.py` once before committing.
+Verified on Renode (`--target renode`, the default): `rpmsg_test.py 500` gave 500/500 round trips, and `run_examples.py` passed 6/6. **The `--target board` path has not run**, because no board or serial device is available yet; test it at H1/H2.
 
 ## D. What goes to the board, summarised
 
