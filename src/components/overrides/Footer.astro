@@ -3,7 +3,16 @@
 // own footer (edit link, last updated, previous/next).
 import Default from '@astrojs/starlight/components/Footer.astro';
 
-const lesson = Astro.locals.starlightRoute.entry.data.lesson;
+const route = Astro.locals.starlightRoute;
+const lesson = route.entry.data.lesson;
+
+// The Chipwings module is its own menu: previous/next must not lead into the embedded Linux course or back.
+const inChipwings = route.id.startsWith('chipwings/');
+const sameMenu = (link?: { href: string }) => !link || link.href.includes('/chipwings/') === inChipwings;
+route.pagination = {
+  prev: sameMenu(route.pagination.prev) ? route.pagination.prev : undefined,
+  next: sameMenu(route.pagination.next) ? route.pagination.next : undefined,
+};
 ---
 
 {

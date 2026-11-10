@@ -137,15 +137,76 @@ All commands are from the repository root. The simulator listens on three ports:
 | 33457 | MMUART1: NuttX or PX4 shell | `telnet localhost 33457` |
 | 33458 | MMUART3: Linux | `telnet localhost 33458`, login `root` / `root` |
 
-| Phase | Build | Run | Verify | Expected |
-|---|---|---|---|---|
-| 0 | none | `renode --console --disable-gui sim/phase0/freertos-smoke.resc < /dev/null` and `renode --disable-gui -P 33456 sim/phase0/icicle-linux.resc` (lesson 2) | log files in `sim/phase0/logs/` | login prompt in the Linux log, web server in the FreeRTOS log |
-| 1 | `sw/build-nuttx.sh nsh-hart1` | `sim/phase1/run.sh headless` | `sim/phase1/check-one-core.sh`; in NSH `hartinfo`, `ostest` | only `u54_1` executes; `ostest` exit 0 |
-| 2 | `sw/build-linux.sh` | `sim/phase2/run.sh headless` | in Linux `nproc`, `cat /proc/cpuinfo` | 3 CPUs, harts 2, 3, 4 |
-| 3 | `sw/build-nuttx.sh nsh-amp-hart1` | `sim/phase3/run.sh headless` | `sim/phase1/check-one-core.sh` | both prompts after about 2 s |
-| 4 | `sw/build-nuttx.sh nsh-rpmsg-hart1` | `sim/phase4/run.sh headless` | `sim/phase4/rpmsg_test.py 500`, `examples/run_examples.py` | 500/500 and 6/6 |
-| 5a | `sw/build-px4.sh` | `sim/phase5/run.sh headless` | `sim/phase5/phase5_test.py` | 13/13 |
-| 5b | (same) | `sim/phase5/run.sh headless linux` | `sim/phase5/phase5_test.py --linux --flight` | 30/30, about 15 min |
+Each phase below has the same four parts: build, run, verify, and what you should see.
+
+### Phase 0: vendor demos
+
+```sh
+R=~/tools/renode_1.17.0-portable/renode
+$R --console --disable-gui sim/phase0/freertos-smoke.resc < /dev/null
+$R --disable-gui -P 33456 sim/phase0/icicle-linux.resc
+```
+
+Verify: the log files in `sim/phase0/logs/`. Expected: a web server start-up in the FreeRTOS log, a Linux login prompt in `icicle-mmuart1-linux.log` (lesson 2).
+
+### Phase 1: NuttX alone
+
+```sh
+sw/build-nuttx.sh nsh-hart1
+sim/phase1/run.sh headless
+sim/phase1/check-one-core.sh          # then, in NSH (port 33457): hartinfo, ostest
+```
+
+Expected: only `u54_1` executes; `ostest` ends with exit status 0.
+
+### Phase 2: Linux alone
+
+```sh
+sw/build-linux.sh
+sim/phase2/run.sh headless            # then, in Linux (port 33458): nproc ; cat /proc/cpuinfo
+```
+
+Expected: 3 CPUs, harts 2, 3 and 4.
+
+### Phase 3: both together
+
+```sh
+sw/build-nuttx.sh nsh-amp-hart1
+sim/phase3/run.sh headless
+sim/phase1/check-one-core.sh
+```
+
+Expected: both prompts after about 2 s of host time; the E51 halted, all four U54s executing.
+
+### Phase 4: RPMsg
+
+```sh
+sw/build-nuttx.sh nsh-rpmsg-hart1
+sim/phase4/run.sh headless
+sim/phase4/rpmsg_test.py 500
+examples/run_examples.py
+```
+
+Expected: `RESULT rounds=500 ok=500 bad=0`, then `6/6 examples passed`.
+
+### Phase 5a: PX4 alone
+
+```sh
+sw/build-px4.sh
+sim/phase5/run.sh headless
+sim/phase5/phase5_test.py
+```
+
+Expected: 13/13 checks.
+
+### Phase 5b: PX4 and Linux, full flight suite
+
+```sh
+sim/phase5/run.sh headless linux
+sim/phase5/phase5_test.py --linux --flight
+```
+
+Expected: 30/30 checks, about 15 minutes. Run it once per boot.
 
 Stop the simulator with `sim/phase5/run.sh stop` (Phase 5) or `quit` on the monitor port. Do not `kill` it: the process returns before Renode exits, and a restart then races for the ports.
 

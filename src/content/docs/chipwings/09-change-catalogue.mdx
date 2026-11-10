@@ -23,42 +23,57 @@ Use this page as a reference when a teammate asks "what did you change in X?". E
 
 ## A. Patches to upstream code
 
-These are the changes most worth presenting: each one is a real defect or gap in a third-party project.
+These are the changes most worth presenting: each one is a real defect or gap in a third-party project. Each entry gives the file patched, the kind, whether it matters on the board, the lesson that explains it, and what and why.
 
 ### NuttX 13.1 (`sw/patches/`, applied by `build-nuttx.sh`)
 
-| Patch | File patched | Kind | What and why | Board? | Lesson |
-|---|---|---|---|---|---|
-| 0001 | `arch/risc-v/src/mpfs/mpfs_timerisr.c` | Bug | Pass the base `mtimecmp` address. `riscv_mtimer` already adds `8 * cpu_index`, so hart 1 programmed hart 2's timer and never got a tick. | Yes | 3 |
-| 0002 | `arch/risc-v/src/mpfs/mpfs_ihc.c` | Add | Put the RPMsg resource table first in its struct and in section `.resource_table`, so the linker can pin it at `0xA2300000` where Linux looks. | Yes | 6 |
-| 0003 | `mpfs_ihc.c` | Bug | Only treat a message as present when its MP bit is set (stale ack/message loop). Retry the notify with delay and log if it is lost. | Yes | 6 |
-| 0004 | `mpfs_ihc.c` | Bug | Control register writes that do not mean to consume a message now write MP=1 (`MP_KEEP`). Fixes a read-modify-write race that ate messages. | Yes | 6 |
-| 0005 | `mpfs_ihc.c` | Bug | Bound the notify retry budget to about 1 ms (was about a second per failed notification). A dead Linux no longer stalls the sender. | Yes | 8 |
+**0001** `arch/risc-v/src/mpfs/mpfs_timerisr.c` | **Bug** | board: yes | lesson 3
+Pass the base `mtimecmp` address. `riscv_mtimer` already adds `8 * cpu_index`, so hart 1 programmed hart 2's timer and never got a tick.
+
+**0002** `arch/risc-v/src/mpfs/mpfs_ihc.c` | **Add** | board: yes | lesson 6
+Put the RPMsg resource table first in its struct and in section `.resource_table`, so the linker can pin it at `0xA2300000` where Linux looks.
+
+**0003** `mpfs_ihc.c` | **Bug** | board: yes | lesson 6
+Only treat a message as present when its MP bit is set (stale ack and message loop). Retry the notify with a delay and log if it is lost.
+
+**0004** `mpfs_ihc.c` | **Bug** | board: yes | lesson 6
+Control register writes that do not mean to consume a message now write MP=1 (`MP_KEEP`). Fixes a read-modify-write race that ate messages.
+
+**0005** `mpfs_ihc.c` | **Bug** | board: yes | lesson 8
+Bound the notify retry budget to about 1 ms (it was about a second per failed notification). A dead Linux no longer stalls the sender.
 
 ### PX4 (`sw/px4-patches/`, applied once by `build-px4.sh`)
 
-| Patch | File patched | Kind | What and why | Board? |
-|---|---|---|---|---|
-| 0001 | `platforms/nuttx/cmake/px4_impl_os.cmake` | Add | Detect `CONFIG_ARCH_CHIP_MPFS` and choose `microchip/mpfs` | Yes |
-| 0002 | `platforms/common/include/px4_platform_common/board_common.h` | Add | `PX4_SOC_ARCH_ID_MPFS = 0x000A` | Yes |
-| 0003 | `src/lib/controllib/controllib_test/CMakeLists.txt` | Bug | Declare the missing `controllib` and `mathlib` dependencies | Yes |
-| 0004 | `src/systemcmds/param/param.cpp` | Bug | Treat an empty backup file name as "none" (NuttX `open("")` is `ENXIO`) | Yes |
-| 0005 | `platforms/nuttx/CMakeLists.txt`, `platforms/nuttx/NuttX/CMakeLists.txt` | Add | Build and link NuttX `openamp/` when `CONFIG_OPENAMP` is set | Yes |
-| 0006 | `platforms/nuttx/src/px4/common/tasks.cpp` | Bug | Scale task stacks by pointer size. 32-bit stack sizes overflowed on RV64 and corrupted the heap. | Yes |
+All six matter on the board.
+
+**0001** `platforms/nuttx/cmake/px4_impl_os.cmake` | **Add**
+Detect `CONFIG_ARCH_CHIP_MPFS` and choose `microchip/mpfs`.
+
+**0002** `platforms/common/include/px4_platform_common/board_common.h` | **Add**
+`PX4_SOC_ARCH_ID_MPFS = 0x000A`.
+
+**0003** `src/lib/controllib/controllib_test/CMakeLists.txt` | **Bug**
+Declare the missing `controllib` and `mathlib` dependencies.
+
+**0004** `src/systemcmds/param/param.cpp` | **Bug**
+Treat an empty backup file name as "none" (NuttX `open("")` fails with `ENXIO`).
+
+**0005** `platforms/nuttx/CMakeLists.txt` and `platforms/nuttx/NuttX/CMakeLists.txt` | **Add**
+Build and link NuttX `openamp/` when `CONFIG_OPENAMP` is set.
+
+**0006** `platforms/nuttx/src/px4/common/tasks.cpp` | **Bug**
+Scale task stacks by pointer size. 32-bit stack sizes overflowed on RV64 and corrupted the heap.
 
 ### PX4's NuttX fork (12.12), applied by `build-px4.sh`
 
-| Patch | Source | Why |
-|---|---|---|
-| resource table | `sw/patches/0002` | Same as NuttX 13.1 |
-| IHC fixes | `sw/px4-patches/nuttx/0003`, `0004`, `0005` | The three IHC patches, rebased for the fork. 0005 uses the real `mpfs` path because `arch/risc-v/src/chip` is a symlink there and git refuses to patch through it. |
-| (none) | `sw/patches/0001` is **not** applied | 12.12's `riscv_mtimer` adds no per-hart offset; applying it would break hart 1's tick |
+- **Resource table:** `sw/patches/0002`, the same patch as for NuttX 13.1.
+- **IHC fixes:** `sw/px4-patches/nuttx/0003`, `0004` and `0005`: the three IHC patches, rebased for the fork. 0005 uses the real `mpfs` path because `arch/risc-v/src/chip` is a symlink there and git refuses to patch through it.
+- **Not applied:** `sw/patches/0001`. 12.12's `riscv_mtimer` adds no per-hart offset, so applying it would break hart 1's tick.
 
 ### OpenSBI (`sw/br2-chipwings/patches/opensbi/`)
 
-| Patch | Kind | What and why | Board? |
-|---|---|---|---|
-| `0001-platform-generic-add-Microchip-PolarFire-SoC-Mi-V-IHC-SBI-extension.patch` | Add | Adds the Microchip vendor SBI extension (`0x09000029`): IHC init, tx, rx, remoteproc state. Ported from HSS. Also writes MP=1 on control updates (same race as NuttX 0004). | **No**: HSS provides this on the board. Needed only because Renode skips HSS. |
+**0001** `0001-platform-generic-add-Microchip-PolarFire-SoC-Mi-V-IHC-SBI-extension.patch` | **Add** | board: **no**
+Adds the Microchip vendor SBI extension (`0x09000029`): IHC init, tx, rx, remoteproc state. Ported from HSS. It also writes MP=1 on control updates (the same race as NuttX 0004). HSS provides this on the board, so it is needed only because Renode skips HSS.
 
 ## B. New components we wrote
 
